@@ -1584,6 +1584,74 @@ pre.syntax .decl { color: var(--syn-comment); font-style: italic; }
   color: var(--muted);
   white-space: nowrap;
 }
+/* Overview before its first data: shimmering placeholders instead of zeros and "all normal". */
+.ov.loading .kpi-value,
+.ov.loading .kpi-sub,
+.ov.loading .ov-card::after {
+  color: transparent;
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--surface-2) 25%, var(--border) 50%, var(--surface-2) 75%) 0 0 / 300% 100%;
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+}
+.ov.loading .kpi-value {
+  width: 5rem;
+  overflow: hidden;
+}
+.ov.loading .kpi-sub {
+  width: 9rem;
+  margin-top: 0.2rem;
+}
+.ov.loading .kpi-main > :not(.kpi-value),
+.ov.loading .ov-head app-status-icon,
+.ov.loading .ov-head button,
+.ov.loading .ov-head .segmented {
+  visibility: hidden;
+}
+.ov.loading .ov-card > :not(.ov-head) {
+  display: none;
+}
+/* Three text-like bars per card. */
+.ov.loading .ov-card::after {
+  content: '';
+  display: block;
+  height: 3.3rem;
+  mask-image: repeating-linear-gradient(to bottom, #000 0 0.75rem, transparent 0.75rem 1.25rem);
+}
+@keyframes skeleton-shimmer {
+  from { background-position: 100% 0; }
+  to { background-position: 0 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ov.loading .kpi-value,
+  .ov.loading .kpi-sub,
+  .ov.loading .ov-card::after {
+    animation: none;
+  }
+}
+
+/* Queue group: stays selected across connections, so it is highlighted while it narrows the lists. */
+.group-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.1rem 0.25rem;
+  border-radius: var(--radius);
+  border: 1px solid transparent;
+}
+.group-picker.active {
+  background: var(--info-bg);
+  border-color: var(--accent);
+}
+.group-picker.active select {
+  font-weight: 600;
+  color: var(--accent);
+}
+.group-count {
+  font-size: 0.78rem;
+  color: var(--muted);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
 .broker-badge[data-broker='ibmmq'] {
   color: var(--accent);
   background: var(--info-bg);
@@ -1593,6 +1661,16 @@ pre.syntax .decl { color: var(--syn-comment); font-style: italic; }
 /* IBM MQ */
 .mq-queues-table .row {
   grid-template-columns: minmax(220px, 1fr) minmax(110px, 200px) 80px 110px 60px 60px 120px 100px 100px;
+}
+
+/* MSMQ */
+.msmq-queues-table .row {
+  grid-template-columns: minmax(260px, 1fr) 100px 90px 90px 70px 130px;
+}
+.broker-badge[data-broker='msmq'] {
+  color: var(--warn);
+  background: var(--warn-bg);
+  border-color: transparent;
 }
 .depth-meter {
   display: inline-flex;

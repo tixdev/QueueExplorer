@@ -1,11 +1,11 @@
 # DynaQueueExplorer
 
-A web-based explorer for **RabbitMQ** and **IBM MQ**, built for teams running **NServiceBus**. It replaces desktop tools such as
+A web-based explorer for **RabbitMQ**, **IBM MQ** and **MSMQ**, built for teams running **NServiceBus**. It replaces desktop tools such as
 QueueExplorer (Windows-only, slow on large brokers) with a shared, fast web application that:
 
 - shows the state of one or more RabbitMQ clusters — nodes, queues, exchanges, bindings, shovels — and IBM MQ queue
-  managers — queues, depths, open handles, dead-letter and transmission queues — without requiring users to be
-  broker administrators;
+  managers — queues, depths, open handles, dead-letter and transmission queues — and MSMQ machines — private,
+  dead-letter and outgoing queues — without requiring users to be broker administrators;
 - recognises NServiceBus messages and displays them in a structured way (message types, endpoints, failure details);
 - moves, copies, retries, exports and imports messages safely;
 - parks messages in a **staging area**, shared across brokers, to inspect and edit them before deciding where to
@@ -13,8 +13,8 @@ QueueExplorer (Windows-only, slow on large brokers) with a shared, fast web appl
 - applies its own **role-based access control** on top of a single privileged service account, and records every
   sensitive operation in an **audit log**.
 
-IBM MQ is supported read-only for now (overview, queues, browse with full decoding); moving, copying and staging IBM MQ
-messages, and Kafka, are planned. Each broker plugs in next to the others: see [docs/ux-multi-broker.md](docs/ux-multi-broker.md).
+IBM MQ and MSMQ are supported read-only for now (overview, queues, browse with full decoding); moving, copying and
+staging their messages, and Kafka, are planned. Each broker plugs in next to the others: see [docs/ux-multi-broker.md](docs/ux-multi-broker.md).
 
 ---
 
@@ -82,6 +82,23 @@ messages, and Kafka, are planned. Each broker plugs in next to the others: see [
   messages as a parameter table. The body is decoded with the CCSID of the last header — UTF-8, Latin-1/Windows code
   pages and **EBCDIC** (500, 1140–1149 with euro, 037, 273, 280…) — and can be switched to a **hex view** to check a
   doubtful decoding.
+
+### MSMQ
+- MSMQ is read on Windows by the **MSMQ agent** (`src/agent`), a small Windows service that uses the native MSMQ API
+  and answers the explorer over HTTP(S) with a shared key. One agent can read several machines remotely (as
+  QueueExplorer does from a workstation) or run on the MSMQ server itself, which is faster. Each **machine is a
+  connection**; it plays the role of the vhost in URLs and RBAC grants.
+- **Overview**: messages in the private queues, the **dead-letter queues** (transactional and non-transactional),
+  NServiceBus **error queues** with messages, the **outgoing queues** with messages and their connection state (messages
+  waiting for a machine that is not connected are a health item), the queues with most messages, and how the depths
+  were read.
+- **Queues**: private queues, the two system dead-letter queues and the outgoing queues towards other machines, with
+  messages, size and journal; NServiceBus infrastructure (`.retries`, `.timeouts`, `.distributor.*`…) hidden by default.
+- **Peek is non-destructive**: messages are read with a cursor. Outgoing queues cannot be peeked.
+- **Message viewer**, *MSMQ* tab: label, ids, **class** — for a dead-lettered message, *why* it was dead-lettered
+  (e.g. `0xC001 · NACK: purged from the destination queue`) — sent/arrived times, response, admin and destination
+  queues, transaction, time-to-reach/time-to-be-received, sender. **NServiceBus headers** are read from the message
+  *extension* (XML), so the NServiceBus view, failure details and Header tab work as for RabbitMQ.
 
 ### Move, copy, retry
 All operations work on the **selected messages** or, if none is selected, on the **first N messages** of the queue.
@@ -186,6 +203,20 @@ Measured locally (622 queues, 1567 exchanges, 4174 bindings): snapshot refresh ~
   certificate file the IBM client accepts any CA and does not check the host name, so the explorer first verifies the
   server certificate itself (against `CaCertificatePath` or the machine's trust store, host name included).
 
+## Things to know about MSMQ
+
+- MSMQ has no remote bulk API. The agent lists the private queues of a machine in one call (MSMQApplication), reads
+  every depth in one call from the **`MSMQ Queue` performance counters**, and only asks the outgoing queues that hold
+  messages for their state. When a machine's counters cannot be read remotely (Remote Registry stopped, "network path
+  not found"), it falls back to one management call per **active** queue (MSMQ keeps every queue that holds messages
+  active, so the others are empty): a few seconds per hundred queues. The overview says which method was used.
+- The system dead-letter queues have neither counters nor management info: they are counted by peeking headers, up
+  to `Agent:DeadLetterCountLimit` (shown as "≥ n").
+- Reading a machine remotely takes from under a second to tens of seconds; the explorer therefore answers from its
+  snapshot at once and refreshes it in the background every 30 s while the machine is in use (and once at startup).
+- The agent's Windows account needs *Peek* (and *Get Properties*) on the queues, like the people who use QueueExplorer
+  today; for remote counters, membership of *Performance Monitor Users* on the MSMQ machines.
+
 ## Architecture
 
 ```
@@ -193,9 +224,11 @@ src/server/
   DynaQueueExplorer.Core            RBAC model, cluster options, audit contract, message keys, body formatting
   DynaQueueExplorer.RabbitMq        management API client, snapshots, AMQP connections, move/copy/publish, .mqx format
   DynaQueueExplorer.IbmMq           IBM MQ client connections, PCF snapshots, browse, header chain and CCSID decoding
+  DynaQueueExplorer.Msmq            MSMQ agent client, snapshots, NServiceBus headers from the extension
   DynaQueueExplorer.NServiceBus     NServiceBus message recognition and decoding
   DynaQueueExplorer.Infrastructure  EF Core / SQL Server: roles, grants, assignments, audit, staging
   DynaQueueExplorer.Api             ASP.NET Core minimal API (.NET 10); serves the SPA
+src/agent/DynaQueueExplorer.MsmqAgent  Windows service reading MSMQ (COM API, mqrt.dll, performance counters)
 src/web/                           Angular 22 (zoneless, signals, CDK virtual scroll); UI in English
 tests/DynaQueueExplorer.Tests       xUnit, including fixtures captured from real NServiceBus 10 failures
 tools/perf-env/                    generators for an NServiceBus-like RabbitMQ topology and sample messages
@@ -331,6 +364,77 @@ IBM MQ queue managers go in the same list with `"Broker": "ibmmq"`:
 | `IbmMq:PcfResponseTimeout` | wait for PCF responses (10 s) |
 | `IbmMq:BrowseTruncateBytes` | message data read per message when browsing (256 KB) |
 | `LocalUsers[]` | test-phase users (`Username`, `Password`, `DisplayName`, `Groups`) |
+| `QueueGroups[]` | cross-broker queue groups (`Name`, `Description`, `Rules[]` of `Broker`, `Cluster`, `Vhost`, `Queue`), see below |
+
+### Queue groups
+
+A queue group is a named selection of queues that spans brokers, typically an environment: "T1 CH" is a set of RabbitMQ
+vhosts on one side and a set of IBM MQ queues, recognised by their name, on the other. A queue belongs to a group when
+**any** of its rules matches. A rule has glob patterns (`*`, `?`, case-insensitive) on `Cluster`, `Vhost` (for IBM MQ:
+the queue manager) and `Queue`, plus an optional `Broker` (`rabbitmq`, `ibmmq`). A field that is not set matches
+everything. For RabbitMQ the `Queue` pattern also selects the exchanges that have the same name.
+
+```json
+"QueueGroups": [
+  {
+    "Name": "T1 CH",
+    "Description": "Test environment 1, Switzerland",
+    "Rules": [
+      { "Broker": "rabbitmq", "Vhost": "*-ch-*.t1.*" },
+      { "Broker": "ibmmq", "Queue": "*CHT1.*" }
+    ]
+  }
+]
+```
+
+In the UI the group is picked next to the connection, and it stays selected when you switch connection or come back
+later, so going from RabbitMQ to IBM MQ keeps you in the same environment. It narrows every list:
+- queues, exchanges and the vhost filters;
+- the overview: messages, queues and exchanges KPIs, health, failures, stopped endpoints, the top queues and the
+  per-vhost table. On RabbitMQ the **trend** is kept per group too. Rates, connections and nodes stay cluster-wide
+  and are labelled that way.
+
+The top bar shows how many queues of the connection are in the group, or warns when the group has no rule for that
+broker. In the move/copy dialog the group's vhosts and queues come first, but any destination can still be chosen.
+Detail pages opened from a link work even for queues outside the group. Groups only narrow what is shown: access is
+still decided by RBAC.
+
+### MSMQ machines and the agent
+
+Each MSMQ machine is a connection with `Broker: msmq`, the machine name as in MSMQ format names (`Host`) and the
+agent that reads it:
+
+```json
+{
+  "Name": "msmq-ba-wxi001",
+  "Description": "MSMQ T1 distributor",
+  "Broker": "msmq",
+  "Host": "msmq-ba-wxi001.moon.corner.tech",
+  "AgentUrl": "http://localhost:5180",
+  "AgentApiKey": "<the agent's Agent:ApiKey>"
+}
+```
+
+The agent (`src/agent/DynaQueueExplorer.MsmqAgent`, .NET 10, Windows with MSMQ installed) is configured in its
+`appsettings.json` / `appsettings.Local.json`:
+
+| setting | meaning |
+|---|---|
+| `Urls` | where it listens (`http://localhost:5180`); use `https://…` with a Kestrel certificate when the explorer runs on another host |
+| `Agent:ApiKey` | shared secret (≥ 24 characters) the explorer sends in `X-DQE-Agent-Key` |
+| `Agent:Machines` | machines it may read; empty = only its own. Any other machine is refused |
+| `Agent:DepthParallelism` | management calls in parallel when counters are not readable (16) |
+| `Agent:DeadLetterCountLimit` | dead-letter messages counted at most (1000) |
+
+```powershell
+dotnet publish src/agent/DynaQueueExplorer.MsmqAgent -c Release -o C:\Services\DqeMsmqAgent
+sc.exe create DqeMsmqAgent binPath= "C:\Services\DqeMsmqAgent\DynaQueueExplorer.MsmqAgent.exe" start= auto obj= "DOMAIN\svc-account" password= "…"
+sc.exe start DqeMsmqAgent
+```
+
+It also runs from a console (`DynaQueueExplorer.MsmqAgent.exe`) for testing. `Msmq:ActiveRefreshInterval` (30 s),
+`Msmq:IdleAfter` (5 min), `Msmq:RequestTimeout` (2 min), `Msmq:WarmUpOnStart` and `Msmq:BrowseTruncateBytes` tune the
+explorer side.
 
 ### RabbitMQ service account
 
@@ -364,7 +468,7 @@ messages involved stay where they were.
 Queues the account may not display are simply not listed, and the overview says so under "Limited visibility".
 Errors always carry the MQ reason code, its constant and its meaning (e.g. `2035 MQRC_NOT_AUTHORIZED`). Calling an
 operation that is not implemented for IBM MQ yet (move, copy, delete, purge, export, staging, trend, failure analysis)
-answers *400 Not supported for IBM MQ*, and the UI does not offer it.
+answers *400 Not supported for IBM MQ*, and the UI does not offer it (the same holds for MSMQ).
 
 ### Test users (Development only, `appsettings.Development.json`)
 
@@ -394,4 +498,4 @@ cd src/web && npx ng build           # frontend build (production)
 - Browsing streams; AMQP 1.0 browse with the `modified` outcome to avoid incrementing the quorum delivery count.
 - IBM MQ operations: move, copy, delete, export and staging (browse and decoding are done); channel status; topics.
 - Kafka (the staging area already records the broker of each message).
-- MSMQ on remote Windows machines: analysed and parked — see [docs/msmq-support.md](docs/msmq-support.md).
+- MSMQ operations: move, retry, delete, export and staging; journal queues (peek is done) — see [docs/msmq-support.md](docs/msmq-support.md).

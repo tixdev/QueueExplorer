@@ -16,6 +16,24 @@
       } @else {
         <span class="cluster-name" [title]="current()?.description ?? ''">{{ cluster() }}</span>
       }
+      @if (queueGroups.groups().length) {
+        <span class="group-picker" [class.active]="!!queueGroups.active()">
+          <select aria-label="Queue group" [title]="queueGroups.active()?.description ?? 'Show every queue of the connection'" (change)="queueGroups.select($any($event.target).value)">
+            <option value="" [selected]="!queueGroups.active()">All queues</option>
+            @for (g of queueGroups.groups(); track g.name) {
+              <option [value]="g.name" [selected]="g.name === queueGroups.active()?.name">{{ g.name }}</option>
+            }
+          </select>
+          @if (store.groupCoverage(); as c) {
+            @if (c.applies) {
+              <span class="group-count" [title]="(c.messages | num) + ' messages in ' + c.name">{{ c.queues | num }}/{{ c.total | num }} queues</span>
+            } @else {
+              <span class="group-count warn-text" [title]="c.name + ' has no rule for ' + brokerLabel(store.broker())">no rule for {{ brokerLabel(store.broker()) }}</span>
+            }
+            <button class="small ghost" (click)="queueGroups.select('')" title="Show all queues" aria-label="Clear queue group">✕</button>
+          }
+        </span>
+      }
       <nav class="nav">
         @if (can(A.overviewRead) || can(A.nodesRead)) {
           <a [routerLink]="['/c', cluster(), 'overview']" routerLinkActive="active">Overview</a>
@@ -23,10 +41,10 @@
         @if (can(A.queuesRead)) {
           <a [routerLink]="['/c', cluster(), 'queues']" routerLinkActive="active">Queues</a>
         }
-        @if (can(A.exchangesRead) && !store.isIbmMq()) {
+        @if (can(A.exchangesRead) && store.isRabbitMq()) {
           <a [routerLink]="['/c', cluster(), 'exchanges']" routerLinkActive="active">Exchanges</a>
         }
-        @if (can(A.shovelsRead) && !store.isIbmMq()) {
+        @if (can(A.shovelsRead) && store.isRabbitMq()) {
           <a [routerLink]="['/c', cluster(), 'shovels']" routerLinkActive="active">Shovels</a>
         }
         @if (canStaging()) {

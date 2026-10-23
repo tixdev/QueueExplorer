@@ -28,6 +28,8 @@ import { BytesPipe, DateTimePipe, RelativePipe } from './format';
                 <span>{{ m.payloadBytes | bytes }}</span>
                 @if (m.ibmMq; as mq) {
                   <span class="badge muted" title="MQ format">{{ mq.headers[0]?.format?.trim() ?? mq.bodyFormat }}</span>
+                } @else if (deadLettered(m)) {
+                  <span class="badge warn" [title]="m.msmq?.classDescription ?? ''">dead-lettered</span>
                 } @else if (!m.nServiceBus) {
                   <span class="badge muted">not NSB</span>
                 }
@@ -70,13 +72,25 @@ export class MessageList {
   }
 
   title(m: BrowsedMessage): string {
-    return m.nServiceBus?.messageTypes[0]?.name ?? (m.ibmMq ? mqTitle(m.ibmMq) : undefined) ?? (m.body.format === 'binary' ? 'Binary' : (m.contentType ?? 'Message'));
+    return (
+      m.nServiceBus?.messageTypes[0]?.name ??
+      (m.ibmMq ? mqTitle(m.ibmMq) : undefined) ??
+      m.msmq?.label ??
+      (m.body.format === 'binary' ? 'Binary' : (m.contentType ?? 'Message'))
+    );
+  }
+
+  /** MSMQ negative acknowledgement classes (0x8000 and above) are why a message was dead-lettered. */
+  deadLettered(m: BrowsedMessage): boolean {
+    return (m.msmq?.class ?? 0) >= 0x8000;
   }
 
   subtitle(m: BrowsedMessage): string {
     const n = m.nServiceBus;
     if (n?.failure) return `${n.failure.exceptionType?.split('.').pop() ?? ''}: ${n.failure.message ?? ''}`;
     if (n) return n.originatingEndpoint ?? '';
+    // Dead-lettered MSMQ messages: the reason first.
+    if (this.deadLettered(m)) return m.msmq?.classDescription ?? '';
     return m.body.text?.slice(0, 80) ?? '';
   }
 }

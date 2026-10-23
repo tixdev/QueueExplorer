@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using DynaQueueExplorer.Api.Security;
 using DynaQueueExplorer.Core.Auditing;
+using DynaQueueExplorer.Core.Clusters;
 using DynaQueueExplorer.Core.Security;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -23,7 +24,8 @@ public static class AuthEndpoints
         string DisplayName,
         IReadOnlyList<string> Groups,
         IReadOnlyList<string> GlobalActions,
-        IReadOnlyList<ClusterAccess> Clusters);
+        IReadOnlyList<ClusterAccess> Clusters,
+        IReadOnlyList<QueueGroup> QueueGroups);
 
     public static void MapAuthEndpoints(this IEndpointRouteBuilder app)
     {
@@ -58,7 +60,7 @@ public static class AuthEndpoints
         });
 
         // Single bootstrap call: identity, visible clusters and the actions allowed on each.
-        app.MapGet("/api/me", async (CurrentUser user, IOptions<DynaQueueExplorer.Core.Clusters.ClustersOptions> clusterOptions, CancellationToken ct) =>
+        app.MapGet("/api/me", async (CurrentUser user, IOptions<ClustersOptions> clusterOptions, IOptions<QueueGroupsOptions> queueGroups, CancellationToken ct) =>
         {
             var permissions = await user.GetPermissionsAsync(ct);
             var clusters = clusterOptions.Value.Items
@@ -68,7 +70,8 @@ public static class AuthEndpoints
             var global = Permissions.All
                 .Where(a => Permissions.Scopes[a] == PermissionScope.Global && permissions.Allows(a, ResourceRef.Global))
                 .ToList();
-            return new MeResponse(user.Username, user.DisplayName, user.Groups, global, clusters);
+            // Queue groups only narrow the UI, so they are the same for everyone; RBAC still decides what each user sees.
+            return new MeResponse(user.Username, user.DisplayName, user.Groups, global, clusters, queueGroups.Value.Items);
         }).RequireAuthorization();
     }
 

@@ -1,0 +1,150 @@
+@if (error(); as e) {
+  <div class="banner error">{{ e }}</div>
+}
+<div class="ov" [class.loading]="loading()" [attr.aria-busy]="loading()">
+  <section class="ov-kpis">
+    <div class="kpi">
+      <span class="kpi-label">Messages</span>
+      <div class="kpi-main"><span class="kpi-value">{{ totalMessages() | num }}</span></div>
+      <span class="kpi-sub">in {{ privateCount() | num }} private queues</span>
+    </div>
+    <div class="kpi">
+      <span class="kpi-label">Dead-letter</span>
+      <div class="kpi-main"><span class="kpi-value" [class.hot]="deadLetterMessages() > 0">{{ deadLetterMessages() | num }}</span></div>
+      <span class="kpi-sub">transactional and non-transactional</span>
+    </div>
+    <div class="kpi">
+      <span class="kpi-label">In error queues</span>
+      <div class="kpi-main"><span class="kpi-value" [class.hot]="errorMessages() > 0">{{ errorMessages() | num }}</span></div>
+      <span class="kpi-sub">{{ errorQueues().length }} NServiceBus error queue{{ errorQueues().length === 1 ? '' : 's' }} with messages</span>
+    </div>
+    <div class="kpi">
+      <span class="kpi-label">Outgoing</span>
+      <div class="kpi-main"><span class="kpi-value" [class.warn-text]="stuckOutgoing().length > 0">{{ outgoingMessages() | num }}</span></div>
+      <span class="kpi-sub">waiting in {{ outgoingBacklog().length }} outgoing queue{{ outgoingBacklog().length === 1 ? '' : 's' }}</span>
+    </div>
+    <div class="kpi">
+      <span class="kpi-label">Machine</span>
+      <div class="kpi-main"><span class="kpi-value mono">{{ machine()?.name ?? '–' }}</span></div>
+      <span class="kpi-sub" [title]="machine()?.host ?? ''">
+        @if (machine(); as m) { read by the agent at {{ m.agent }} }
+      </span>
+    </div>
+    <div class="kpi">
+      <span class="kpi-label">Last read</span>
+      <div class="kpi-main"><span class="kpi-value">{{ checkedAt() ? (checkedAt() | relative) : '–' }}</span></div>
+      <span class="kpi-sub" [title]="machine()?.depthSource === 'queue management' ? 'The machine\'s performance counters are not readable remotely: depths are read queue by queue' : ''">
+        depths from {{ machine()?.depthSource ?? '…' }}
+      </span>
+    </div>
+  </section>
+
+  <div class="ov-grid two">
+    <section class="card ov-card">
+      <header class="ov-head">
+        <app-status-icon [status]="worst()" />
+        <h3>Health</h3>
+        <span class="muted small">{{ health().length ? health().length + ' item' + (health().length > 1 ? 's' : '') + ' to look at' : '' }}</span>
+      </header>
+      @if (health().length) {
+        <ul class="health-list">
+          @for (h of health(); track h.text) {
+            <li>
+              <app-status-icon [status]="h.status" />
+              <div>
+                @if (h.link) {
+                  <a [routerLink]="h.link" [queryParams]="h.query">{{ h.text }}</a>
+                } @else {
+                  <span>{{ h.text }}</span>
+                }
+                @if (h.detail) { <div class="muted small mono">{{ h.detail }}</div> }
+              </div>
+            </li>
+          }
+        </ul>
+      } @else {
+        <p class="health-ok"><app-status-icon status="good" /> All systems normal</p>
+      }
+      @if (limitations().length) {
+        <div class="limitations">
+          <span class="muted small">Limited visibility — what the agent could not read directly:</span>
+          <ul class="health-list">
+            @for (l of limitations(); track l) {
+              <li><app-status-icon status="info" /><span class="small">{{ l }}</span></li>
+            }
+          </ul>
+        </div>
+      }
+    </section>
+
+    <section class="card ov-card">
+      <header class="ov-head">
+        <h3>Queues with most messages</h3>
+        <span class="spacer"></span>
+        <a class="small" [routerLink]="['/c', store.cluster(), 'queues']" [queryParams]="{ withMessages: 1, sort: 'messages' }">Show all</a>
+      </header>
+      @if (topQueues().length) {
+        <table class="grid compact">
+          <tbody>
+            @for (q of topQueues(); track q.name) {
+              <tr class="clickable" [routerLink]="['/c', store.cluster(), 'queues', q.vhost, q.name]">
+                <td class="ellipsis-cell"><span class="mono">{{ shortName(q) }}</span></td>
+                <td class="num">{{ q.messages | num }}</td>
+                <td class="bar-cell"><div class="inline-bar"><span [style.width.%]="((q.messages ?? 0) / topMax()) * 100"></span></div></td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      } @else {
+        <p class="muted small">No application queue has messages.</p>
+      }
+    </section>
+  </div>
+
+  <div class="ov-grid two">
+    <section class="card ov-card">
+      <header class="ov-head">
+        <h3>Error queues</h3>
+        <span class="muted small">NServiceBus failed messages</span>
+      </header>
+      @if (errorQueues().length) {
+        <table class="grid compact">
+          <tbody>
+            @for (q of errorQueues().slice(0, 8); track q.name) {
+              <tr class="clickable" [routerLink]="['/c', store.cluster(), 'queues', q.vhost, q.name]">
+                <td class="ellipsis-cell"><span class="mono error-queue">{{ shortName(q) }}</span></td>
+                <td class="num">{{ q.messages | num }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+        @if (errorQueues().length > 8) { <p class="muted small ov-foot">and {{ errorQueues().length - 8 }} more</p> }
+      } @else {
+        <p class="health-ok"><app-status-icon status="good" /> No messages in error queues</p>
+      }
+    </section>
+
+    <section class="card ov-card">
+      <header class="ov-head">
+        <h3>Outgoing queues</h3>
+        <span class="muted small">messages on their way to other machines</span>
+      </header>
+      @if (outgoingBacklog().length) {
+        <table class="grid compact">
+          <tbody>
+            @for (q of outgoingBacklog().slice(0, 8); track q.name) {
+              <tr class="clickable" [routerLink]="['/c', store.cluster(), 'queues', q.vhost, q.name]">
+                <td class="ellipsis-cell"><span class="mono">{{ q.name }}</span></td>
+                <td class="num">{{ q.messages | num }}</td>
+                <td class="nowrap small" [class.warn-text]="q.state !== 'connected'">{{ q.state ?? '–' }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+        @if (outgoingBacklog().length > 8) { <p class="muted small ov-foot">and {{ outgoingBacklog().length - 8 }} more</p> }
+      } @else {
+        <p class="health-ok"><app-status-icon status="good" /> Nothing waiting to be delivered</p>
+      }
+    </section>
+  </div>
+</div>

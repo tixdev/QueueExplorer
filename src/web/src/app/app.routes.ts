@@ -24,8 +24,9 @@ const clusterHome: CanActivateFn = (route) => {
   const auth = inject(Auth);
   const router = inject(Router);
   const cluster = route.parent?.paramMap.get('cluster') ?? '';
-  // IBM MQ has neither exchanges nor shovels.
-  const rabbit = auth.me()?.clusters.find((c) => c.name === cluster)?.broker !== 'ibmmq';
+  // IBM MQ and MSMQ have neither exchanges nor shovels.
+  const broker = auth.me()?.clusters.find((c) => c.name === cluster)?.broker;
+  const rabbit = broker !== 'ibmmq' && broker !== 'msmq';
   const page = auth.can(cluster, Actions.overviewRead) || auth.can(cluster, Actions.nodesRead)
     ? 'overview'
     : auth.can(cluster, Actions.queuesRead) || !rabbit
@@ -56,6 +57,7 @@ export const routes: Routes = [
         data: brokerPages({
           rabbitmq: () => import('./pages/overview/overview').then((m) => m.OverviewPage),
           ibmmq: () => import('./pages/mq/mq-overview').then((m) => m.MqOverviewPage),
+          msmq: () => import('./pages/msmq/msmq-overview').then((m) => m.MsmqOverviewPage),
         }),
       },
       {
@@ -64,6 +66,7 @@ export const routes: Routes = [
         data: brokerPages({
           rabbitmq: () => import('./pages/queues/queues').then((m) => m.QueuesPage),
           ibmmq: () => import('./pages/mq/mq-queues').then((m) => m.MqQueuesPage),
+          msmq: () => import('./pages/msmq/msmq-queues').then((m) => m.MsmqQueuesPage),
         }),
       },
       {
@@ -72,6 +75,7 @@ export const routes: Routes = [
         data: brokerPages({
           rabbitmq: () => import('./pages/queue/queue').then((m) => m.QueuePage),
           ibmmq: () => import('./pages/mq/mq-queue').then((m) => m.MqQueuePage),
+          msmq: () => import('./pages/msmq/msmq-queue').then((m) => m.MsmqQueuePage),
         }),
       },
       {

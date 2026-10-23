@@ -1,6 +1,7 @@
-# MSMQ support (design notes)
+# MSMQ support
 
-Status: **parked** — analysed, not scheduled. Pick this up before implementing anything for MSMQ.
+Status: **implemented for reading** (overview, queues, peek with NServiceBus decoding) with option B below, the
+Windows agent. Operations (move, retry, delete, export, staging) are not implemented yet.
 
 ## Goal
 
@@ -8,64 +9,69 @@ Browse (and later move, retry, export) messages of MSMQ queues on remote Windows
 which runs cross-platform (Linux/macOS containers, no Windows APIs). Today the team does this with QueueExplorer on
 Windows workstations, so remote reading of the queues is already allowed by the network and by queue permissions.
 
-## Options
+## Options considered
 
-### A. Native protocols, implemented cross-platform (no installation on the MSMQ servers)
+### A. Native protocols, implemented cross-platform (no installation anywhere)
 
-Microsoft publishes the MSMQ protocol specifications (Open Specifications, `[MS-MQ*]`). The relevant ones:
+Microsoft publishes the MSMQ protocol specifications ([MS-MQRR] remote read, [MS-MQMR] management, [MS-MQMQ] data
+structures, [MS-MQQB] sending). It would need a DCE/RPC client with NDR marshaling, NTLM/Kerberos at RPC level and the
+message decoding: weeks of work and a component that is hard to maintain. **Not pursued.**
 
-| spec | purpose | use for us |
+### B. Windows agent — **chosen**
+
+A small Windows service using the native MSMQ API and answering the explorer over HTTP(S) with a shared key. The
+explorer calls it as one more broker type (`msmq`).
+
+The original concern was that installing a service *on the MSMQ servers* needs lengthy approvals. Measurements showed
+it is not necessary: like QueueExplorer, the agent reads the machines **remotely** from any Windows host with MSMQ
+installed (a workstation or a utility server). Installing it on the servers later only makes it faster.
+
+## How the agent reads a machine
+
+| what | how | cost (remote, ittest) |
 |---|---|---|
-| **[MS-MQRR]** Message Queuing Remote Read Protocol | open a remote queue, peek/receive, cursors | **reading remote queues** — what Windows itself uses when a client reads another machine's queue |
-| [MS-MQMR] Queue Manager Management Protocol | queue manager / queue information | listing queues, depths |
-| [MS-MQMQ] Data Structures | message packet and property formats | decoding messages |
-| [MS-MQQB] Binary Reliable Message Transfer (TCP 1801) | queue manager to queue manager *sending* | publishing to a remote queue (move/retry) |
-| [MS-MQDMPR], [MS-MQCN], [MS-MQDS] | common model, notifications, directory service (AD) | public queues / AD integration only |
-| [MC-MQSRM] SOAP Reliable Messaging (SRMP over HTTP) | sending over HTTP | only if MSMQ HTTP support is installed; send only |
+| private queues | `MSMQApplication.PrivateQueues` (COM) | 1 RPC — 1312 queues in 0.7 s |
+| active queues (local and outgoing) | `MSMQApplication.ActiveQueues` | 1 RPC — ~0.2 s |
+| depths, sizes, journal counts | `MSMQ Queue` performance counters, read once for all queues | ~1–10 s for 500 instances |
+| depths when counters are not readable remotely | `MSMQManagement` per **active** queue (inactive queues are empty), 16 in parallel | ~25 ms per queue — 25–50 s for ~1000 active queues |
+| outgoing queue state and next hops | `MQMgmtGetInfo` (mqrt.dll), only for outgoing queues with messages when counters exist | 1 RPC per queue |
+| dead-letter queues (`system$;deadxact`, `system$;deadletter`) | counted by peeking headers, up to a limit | 0.03–0.3 s |
+| peek | `MSMQQueue.PeekCurrent/PeekNext` with a cursor | ~90 ms per message |
 
-What has to be built:
+On ittest the worker machines (`dyn-ba-wxi00x`) expose their counters remotely; the distributor machines
+(`msmq-ba-wxi00x`) answer "network path not found" (Remote Registry not running) and use the per-queue fallback. The
+explorer answers from its snapshot at once and refreshes it in the background, so the slower machines only delay the
+"last read" time, not the pages.
 
-1. **DCE/RPC client with NDR marshaling** ([MS-RPCE]): endpoint mapper (TCP 135) to resolve the dynamic port, then the
-   MS-MQRR interface (the MSMQ RPC ports are typically 2101/2103/2105). No maintained managed library exists;
-   impacket (Python) implements DCE/RPC + NTLM and is a useful reference.
-2. **Windows authentication at RPC level**: NTLM/Kerberos with packet integrity/privacy. .NET's
-   `NegotiateAuthentication` (cross-platform since .NET 7) can provide the tokens; wiring it into the RPC security
-   trailer is the delicate part. Kerberos on Linux/macOS needs a keytab/krb5 configuration. The account needs
-   *Peek/Receive* rights on the queues (same as for QueueExplorer users today).
-3. **Message decoding**: properties per [MS-MQMQ]; bodies from .NET Framework apps are usually `XmlMessageFormatter`
-   (XML) or `BinaryMessageFormatter` (BinaryFormatter — show as hex/text, **never deserialize**). NServiceBus on MSMQ
-   stores its headers as XML in the message *Extension* property, so the existing NServiceBus decoder can be reused
-   once those headers are extracted.
-4. Cursor-based **peek** is side-effect free on MSMQ (unlike RabbitMQ's get/requeue): browsing does not change the
-   queue, so no delivery-count concerns.
+Peeking is side-effect free on MSMQ (unlike RabbitMQ's get/requeue): no delivery counts, no reordering.
 
-Risks: weeks of work; compatibility across Windows/MSMQ versions; authentication edge cases; a component that is hard
-to maintain. Network: QueueExplorer proves the RPC ports are open **from the Windows workstations**; it must be checked
-that the same ports (135, the dynamic MSMQ RPC ports, 1801 for sending) are reachable **from the network where
-DynaQueueExplorer runs**.
+## Message decoding
 
-### B. Windows agent (preferred technically)
+- Native properties: id and correlation id in the System.Messaging form `{guid}\{sequence}`, label, **class** (for a
+  dead-lettered message the reason, e.g. `0xC001 NACK: purged from the destination queue`), times, response / admin /
+  destination queues, transaction, time-to-reach-queue / time-to-be-received, sender (SID translated to the account).
+- NServiceBus on MSMQ stores its headers as XML in the message **extension** (`ArrayOfHeaderInfo`); they are parsed with
+  DTDs prohibited and fed to the same NServiceBus decoder as RabbitMQ headers.
+- Bodies are returned as bytes (COM string bodies as UTF-8) and formatted like the others (XML/JSON pretty-printed,
+  binary as hex). Bodies serialized with `BinaryFormatter` are shown as bytes, **never deserialized**.
 
-A small Windows service on (or next to) the MSMQ servers, using the native MSMQ API and exposing an authenticated
-HTTPS API (client certificate or token) that DynaQueueExplorer calls as one more broker type (`msmq`):
+## Security
 
-- native, fully compatible behaviour: true peek, subqueues (`MoveMessage`), journal and system dead-letter queues, purge;
-- fits the existing architecture: snapshot-style bulk listing, the staging area (broker `msmq`), `.mqx` export;
-- much less code and risk than option A.
+- The agent requires `X-DQE-Agent-Key` on every call (constant-time comparison) and only reads the machines listed in
+  `Agent:Machines` (by default only its own), so it cannot be used to reach arbitrary hosts.
+- It only accepts `private$\name` and the two system dead-letter queues as queue names, never a full format name.
+- It listens on `localhost` by default; across hosts use HTTPS (Kestrel certificate).
+- Users never talk to the agent: the explorer applies RBAC first (the machine is the *vhost* of grants) and audits browses.
 
-**On hold**: installing a service on the MSMQ servers requires lengthy internal approval processes.
+## Queue groups
 
-## Decision so far
+MSMQ environments are identified by machine (T1: `msmq-ba-wxi001` + `dyn-ba-wxi001`, T2: `…wxi002`, T3:
+`msmq-ba-wxi003` + `dyn-ba-wxi005`), countries by queue name (CH: `*.ch.*`; BS: `*.bs.*` or a name starting with `bs`),
+so the group rules use the `Cluster` (connection) pattern together with the `Queue` pattern.
 
-- Option B is the shortest and safest path but is blocked by company processes for now.
-- Option A is feasible because the network already allows remote reading, at a much higher cost and risk.
-- Revisit when MSMQ support is prioritised. Open questions then: which queues/endpoints still run on MSMQ (e.g.
-  NServiceBus MSMQ transport), whether the need is migration support or day-to-day operations, and the
-  authentication setup (domain account, Kerberos availability from the DynaQueueExplorer host).
+## Next steps
 
-## Fit with the existing code
-
-Whatever the option, MSMQ would plug in as another broker next to RabbitMQ: a client project
-(`DynaQueueExplorer.Msmq`), a snapshot provider for queue listing/depths, a message reader producing the same
-`BrowsedMessage` view model, and staging messages with `Broker = "msmq"` (the staging area already records the broker
-of every batch and message, and publishing is only offered towards a broker of the same kind).
+- Operations: move/retry within and across machines (`MQSendMessage` in a transaction, remove from the source only
+  after the send committed), delete, export to `.mqx`, staging with `Broker = "msmq"`.
+- Journal queues (`private$\name;journal`) and subqueues (`;retry`, `;poison`).
+- Agent on the MSMQ servers (local counters, sub-second reads) once approved.

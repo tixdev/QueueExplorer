@@ -1,7 +1,7 @@
 @if (error(); as e) {
   <div class="banner error">{{ e }}</div>
 }
-<div class="ov">
+<div class="ov" [class.loading]="loading()" [attr.aria-busy]="loading()">
   <section class="ov-kpis">
     <div class="kpi">
       <span class="kpi-label">Messages</span>

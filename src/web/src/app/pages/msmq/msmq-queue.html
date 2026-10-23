@@ -1,0 +1,90 @@
+<div class="queue-page">
+  <nav class="breadcrumb">
+    <a [routerLink]="['/c', store.cluster(), 'queues']">Queues</a> <span>›</span> <span class="vhost" title="Machine">{{ machine() }}</span> <span>›</span>
+    @if (queue(); as q) {
+      <strong class="mono" [title]="q.name">{{ shortName(q) }}</strong>
+      <span class="badge muted">{{ kindLabels[q.type ?? ''] ?? q.type }}</span>
+    } @else {
+      <strong class="mono">{{ name() }}</strong>
+    }
+  </nav>
+
+  @if (queue(); as q) {
+    @if (q.type === 'outgoing') {
+      <p class="muted">
+        Outgoing queue: messages sent from {{ machine() }} to <span class="mono">{{ q.name }}</span> that have not been delivered yet.
+        They live on the sending machine until the destination accepts them, and cannot be peeked from here.
+      </p>
+    }
+    @if (q.type === 'deadletter') {
+      <p class="muted">
+        System dead-letter queue: messages MSMQ could not deliver or that expired. Each message's class (in the MSMQ tab) says why.
+      </p>
+    }
+
+    <section class="stats compact">
+      <div class="stat">
+        <span class="stat-label">Messages</span>
+        <span class="stat-value">{{ messagesLabel(q) }}</span>
+        <span class="muted">{{ q.atLeast ? 'counted by peeking, up to the agent\'s limit' : 'in the queue' }}</span>
+      </div>
+      @if (q.bytes) {
+        <div class="stat">
+          <span class="stat-label">Size</span>
+          <span class="stat-value">{{ q.bytes | bytes }}</span>
+          <span class="muted">of messages in the queue</span>
+        </div>
+      }
+      @if (q.journalMessages) {
+        <div class="stat">
+          <span class="stat-label">Journal</span>
+          <span class="stat-value">{{ q.journalMessages | num }}</span>
+          <span class="muted">copies of received messages</span>
+        </div>
+      }
+      @if (q.type === 'outgoing') {
+        <div class="stat">
+          <span class="stat-label">Connection</span>
+          <span class="stat-value small-value" [class.warn-text]="isStuck(q)">{{ q.state ?? 'not read (no messages)' }}</span>
+          <span class="muted mono">{{ q.nextHops?.join(', ') ?? '' }}</span>
+        </div>
+      }
+    </section>
+
+    <section class="browse">
+      <div class="toolbar">
+        @if (q.canBrowse) {
+          <label>Messages <input type="number" min="1" max="200" [value]="count()" (change)="count.set(+$any($event.target).value)" class="narrow" /></label>
+          <button class="primary" (click)="browse()" [disabled]="browsing()">{{ browsing() ? 'Reading…' : 'Peek' }}</button>
+          <span class="badge ok" title="MSMQ peek reads messages with a cursor without removing or changing them">Peeking does not change the queue</span>
+          @if (result()) {
+            <input class="search" type="search" placeholder="Filter by body, label, id, type…" [value]="filter()" (input)="filter.set($any($event.target).value)" />
+            <span class="muted">{{ messages().length }} of {{ result()!.messages.length }} read · {{ result()!.queueDepth | num }} in queue</span>
+          }
+        } @else if (q.type === 'outgoing') {
+          <span class="muted">Messages of an outgoing queue cannot be peeked.</span>
+        } @else {
+          <span class="muted">You are not allowed to read the messages of this queue.</span>
+        }
+      </div>
+
+      @if (browseError(); as e) {
+        <div class="banner error">{{ e }}</div>
+      }
+      @if (result(); as r) {
+        <div class="messages-split">
+          <app-message-list [messages]="messages()" [(selectedKeys)]="selectedKeys" [(current)]="selected" />
+          <div class="message-detail">
+            @if (selected(); as m) {
+              <app-message-view [message]="m" />
+            }
+          </div>
+        </div>
+      }
+    </section>
+  } @else if (store.topology()) {
+    <p class="muted">Queue not found or not visible.</p>
+  } @else {
+    <p class="muted">Loading… the first read of an MSMQ machine can take a while.</p>
+  }
+</div>

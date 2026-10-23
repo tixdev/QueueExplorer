@@ -1,6 +1,6 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, effect, inject, signal, untracked } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { EMPTY, map } from 'rxjs';
+import { EMPTY, concat, last, map } from 'rxjs';
 import { Api } from '../../core/api';
 import { Auth } from '../../core/auth';
 import { ClusterStore } from '../../core/cluster-store';
@@ -56,6 +56,17 @@ export class OverviewPage {
     return this.auth.can(this.store.cluster() ?? '', action);
   }
 
+  /** The selected queue group: KPIs, trend, failures and lists follow it. */
+  readonly groupName = computed(() => this.store.group()?.group.name ?? '');
+
+  constructor() {
+    // A new group needs its own trend series straight away, not at the next 30 s tick.
+    effect(() => {
+      this.groupName();
+      untracked(() => this.trendPoll.reload());
+    });
+  }
+
   // Everything below polls endpoints served from the server's snapshot, so none of it reaches RabbitMQ.
   private readonly overviewPoll = poll(() => {
     const c = this.store.cluster();
@@ -68,8 +79,9 @@ export class OverviewPage {
   private readonly trendPoll = poll(() => {
     const c = this.store.cluster();
     const minutes = this.window();
+    const group = this.groupName();
     return c && this.can(Actions.overviewRead)
-      ? this.api.trend(c, minutes).pipe(map((t) => ({ etag: null, body: { minutes, ...t } })))
+      ? this.api.trend(c, minutes, group).pipe(map((t) => ({ etag: null, body: { minutes, group, ...t } })))
       : EMPTY;
   }, 30000);
   private readonly errorsPoll = poll(() => {
@@ -79,14 +91,46 @@ export class OverviewPage {
 
   readonly data = this.overviewPoll.value;
   readonly error = this.overviewPoll.error;
+  /** Until the first answers arrive the cards show placeholders, not zeros and "all normal". */
+  readonly loading = computed(() => {
+    if (this.error() || this.store.error()) return false;
+    const queuesPending = this.can(Actions.queuesRead) && this.store.fullTopology() === undefined;
+    return this.data() === undefined || queuesPending;
+  });
   readonly overview = computed(() => this.data()?.overview);
   readonly nodes = computed(() => this.data()?.nodes);
+  /** Queues of the selected queue group (all of them without one): every list and count below follows it. */
   readonly queues = computed(() => this.store.topology()?.queues ?? []);
+
+  /**
+   * Message and object totals: RabbitMQ's own for the whole cluster, summed from the snapshot's queues for a group.
+   * Rates, connections and nodes have no per-queue split worth showing, so they stay cluster-wide.
+   */
+  readonly totals = computed(() => {
+    const o = this.overview();
+    if (!this.groupName())
+      return {
+        messages: o?.queueTotals?.messages,
+        ready: o?.queueTotals?.messagesReady,
+        unacked: o?.queueTotals?.messagesUnacknowledged,
+        queues: o?.objectTotals?.queues,
+        exchanges: o?.objectTotals?.exchanges,
+      };
+    const queues = this.queues();
+    const sum = (f: (q: Queue) => number | undefined) => queues.reduce((n, q) => n + (f(q) ?? 0), 0);
+    return {
+      messages: sum((q) => q.messages),
+      ready: sum((q) => q.ready),
+      unacked: sum((q) => q.unacked),
+      queues: queues.length,
+      exchanges: this.store.topology()?.exchanges.length,
+    };
+  });
 
   // ---- KPIs -------------------------------------------------------------------------------------------------------
   readonly trend = computed(() => {
     const t = this.trendPoll.value();
-    return t && t.minutes === this.window() ? t : undefined;
+    return t && t.minutes === this.window() && t.group === this.groupName() ? t : undefined;
   });
   readonly trendTimes = computed(() => (this.trend()?.samples ?? []).map((s) => new Date(s.at).getTime()));
   readonly trendPanels = computed<TrendPanel[]>(() => {
@@ -136,7 +180,7 @@ export class OverviewPage {
   readonly vhostMax = computed(() => Math.max(1, ...this.vhosts().map((v) => v.messages)));
 
   // ---- Failures (NServiceBus error queues) -----------------------------------------------------------------------
-  readonly errorQueues = computed<ErrorQueueSummary[]>(() => this.errorsPoll.value() ?? []);
+  readonly errorQueues = computed<ErrorQueueSummary[]>(() => (this.errorsPoll.value() ?? []).filter((q) => this.store.inGroup(q.vhost, q.queue)));
   readonly errorQueuesWithMessages = computed(() => this.errorQueues().filter((q) => q.messages > 0));
   readonly canAnalyze = computed(() => this.errorQueuesWithMessages().some((q) => q.canAnalyze));
   readonly analyzing = signal(false);
@@ -214,7 +258,11 @@ export class OverviewPage {
     if (!c) return;
     this.analyzing.set(true);
     this.analyzeError.set(null);
-    this.api.analyzeErrors(c).subscribe({
+    // With a queue group only its error queues are read, one after the other as the server does for "all".
+    const request = this.groupName()
+      ? concat(...this.errorQueuesWithMessages().filter((q) => q.canAnalyze).map((q) => this.api.analyzeErrors(c, q.vhost, q.queue))).pipe(last(null, []))
+      : this.api.analyzeErrors(c);
+    request.subscribe({
       next: () => {
         this.analyzing.set(false);
         this.errorsPoll.reload();

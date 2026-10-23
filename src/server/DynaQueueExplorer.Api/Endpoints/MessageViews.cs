@@ -3,6 +3,8 @@ using System.Text.Json;
 using DynaQueueExplorer.Core.Messages;
 using DynaQueueExplorer.IbmMq.Client;
 using DynaQueueExplorer.IbmMq.Formats;
+using DynaQueueExplorer.Core.Msmq;
+using DynaQueueExplorer.Msmq;
 using DynaQueueExplorer.NServiceBus;
 using DynaQueueExplorer.RabbitMq.Amqp;
 using DynaQueueExplorer.RabbitMq.Management;
@@ -108,6 +110,62 @@ public static class MessageViews
             formatted.Base64 is null ? Convert.ToBase64String(body[..Math.Min(body.Length, RawBodyPreviewBytes)]) : null);
         return new BrowsedMessage(index, "mq:" + Convert.ToHexString(m.MessageId), m.BackoutCount > 0, "", "", m.Length, properties, headers,
             ContentTypeOf(parsed), formatted, null, IbmMq: view, SentAt: m.PutTime);
+    }
+
+    /// <summary>
+    /// An MSMQ message: native properties in the MSMQ tab and the Properties table, NServiceBus headers (from the
+    /// extension) in the Headers tab and the NServiceBus view.
+    /// </summary>
+    public static BrowsedMessage FromMsmq(int index, MsmqMessage m)
+    {
+        var extension = m.ExtensionBase64 is null ? [] : Convert.FromBase64String(m.ExtensionBase64);
+        var nsbHeaders = MsmqFormats.ParseNServiceBusHeaders(extension);
+        var nsb = nsbHeaders is null ? null : NServiceBusMessageDecoder.TryDecode(nsbHeaders);
+        var contentType = nsb?.ContentType;
+        var body = MessageBodyFormatter.Format(m.BodyBase64, isBase64: true, contentType, m.BodyTruncated);
+
+        static string? Seconds(long? s) => s is null ? "unlimited" : TimeSpan.FromSeconds(s.Value).ToString(s >= 86400 ? @"d\.hh\:mm\:ss" : @"hh\:mm\:ss");
+        var classDescription = MsmqFormats.DescribeClass(m.Class);
+        var properties = new List<MqProperty>
+        {
+            new("Label", m.Label, null),
+            new("Message id", m.Id, null),
+            new("Correlation id", m.CorrelationId, null),
+            new("Class", m.Class is null ? null : $"0x{m.Class:X4} · {classDescription}", null),
+            new("Sent", m.SentTime?.ToString("O"), "datetime"),
+            new("Arrived", m.ArrivedTime?.ToString("O"), "datetime"),
+            new("Recoverable", m.Recoverable is null ? null : m.Recoverable.Value ? "yes (stored on disk)" : "no (express, memory only)", null),
+            new("Priority", m.Priority?.ToString(), null),
+            new("Response queue", m.ResponseQueue, null),
+            new("Admin queue", m.AdminQueue, null),
+            new("Destination queue", m.DestinationQueue, null),
+            new("Transaction", m.TransactionId is null ? null
+                : $"{m.TransactionId}{(m.FirstInTransaction == true ? " · first" : "")}{(m.LastInTransaction == true ? " · last" : "")}", null),
+            new("Time to reach queue", Seconds(m.MaxTimeToReachQueueSeconds), null),
+            new("Time to be received", Seconds(m.MaxTimeToReceiveSeconds), null),
+            new("Journal", m.UseJournal == true ? "yes" : null, null),
+            new("Dead-letter on failure", m.UseDeadLetter is null ? null : m.UseDeadLetter.Value ? "yes" : "no", null),
+            new("App specific", m.AppSpecific is null or 0 ? null : m.AppSpecific.ToString(), null),
+            new("Sender", m.SenderId, null),
+            new("Source machine", m.SourceMachineId, null),
+            new("Lookup id", m.LookupId?.ToString(), null),
+            new("Body", $"{m.BodyLength:N0} bytes{(m.BodyType == "bytes" ? "" : $" ({m.BodyType})")}", null),
+        }.Where(p => p.Value is not null).ToList();
+
+        string? extensionKind = null, extensionText = null;
+        if (nsbHeaders is not null)
+            extensionKind = "NServiceBus headers";
+        else if (extension.Length > 0 && MsmqFormats.DecodeText(extension) is { } text)
+            (extensionKind, extensionText) = ("text", text);
+        else if (extension.Length > 0)
+            (extensionKind, extensionText) = ("binary", Convert.ToHexString(extension.AsSpan(0, Math.Min(extension.Length, 512))));
+
+        var headers = (nsbHeaders ?? []).ToDictionary(h => h.Key, h => JsonSerializer.SerializeToElement(h.Value));
+        var display = properties.Where(p => p.Name is not "Body").ToDictionary(p => p.Name, p => JsonSerializer.SerializeToElement(p.Value));
+        var key = "msmq:" + m.Id;
+        return new BrowsedMessage(index, key, false, "", "", m.BodyLength, display, headers, contentType, body, nsb,
+            SentAt: nsb?.TimeSent ?? m.SentTime,
+            Msmq: new MsmqMessageView(m.Id, m.Label, m.Class, classDescription, properties, extensionKind, extensionText));
     }
 
     private static DateTimeOffset? SentAt(NServiceBusMessageInfo? nsb, long? amqpTimestamp) =>

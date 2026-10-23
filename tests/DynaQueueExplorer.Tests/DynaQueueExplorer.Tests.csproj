@@ -24,6 +24,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\server\DynaQueueExplorer.Core\DynaQueueExplorer.Core.csproj" />
     <ProjectReference Include="..\..\src\server\DynaQueueExplorer.IbmMq\DynaQueueExplorer.IbmMq.csproj" />
+    <ProjectReference Include="..\..\src\server\DynaQueueExplorer.Msmq\DynaQueueExplorer.Msmq.csproj" />
     <ProjectReference Include="..\..\src\server\DynaQueueExplorer.NServiceBus\DynaQueueExplorer.NServiceBus.csproj" />
     <ProjectReference Include="..\..\src\server\DynaQueueExplorer.RabbitMq\DynaQueueExplorer.RabbitMq.csproj" />
   </ItemGroup>

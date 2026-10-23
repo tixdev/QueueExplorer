@@ -1,4 +1,5 @@
 using DynaQueueExplorer.IbmMq.Client;
+using DynaQueueExplorer.Msmq;
 using DynaQueueExplorer.RabbitMq.Management;
 using RabbitMQ.Client.Exceptions;
 using Microsoft.AspNetCore.Diagnostics;
@@ -23,6 +24,9 @@ public sealed class ExplorerExceptionHandler(IProblemDetailsService problems) : 
             IbmMqException { IsNotAuthorized: true } e => (StatusCodes.Status502BadGateway, "IBM MQ refused the service account",
                 $"The IBM MQ account used by the explorer lacks an authority for this operation. {e.Message}"),
             IbmMqException e => (StatusCodes.Status502BadGateway, "IBM MQ request failed", e.Message),
+            MsmqAgentException e => (StatusCodes.Status502BadGateway, "MSMQ request failed", e.Message),
+            HttpRequestException e when http.GetRouteValue("cluster") is string c && http.RequestServices.GetRequiredService<MsmqAgentClients>().Exists(c) =>
+                (StatusCodes.Status502BadGateway, "The MSMQ agent is unreachable", e.Message),
             KeyNotFoundException e => (StatusCodes.Status404NotFound, "Not found", e.Message),
             _ => (0, null, null),
         };

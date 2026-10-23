@@ -9,6 +9,7 @@ using DynaQueueExplorer.Api.Security;
 using DynaQueueExplorer.IbmMq;
 using DynaQueueExplorer.Infrastructure;
 using DynaQueueExplorer.Infrastructure.Persistence;
+using DynaQueueExplorer.Msmq;
 using DynaQueueExplorer.RabbitMq;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.ResponseCompression;
@@ -24,6 +25,7 @@ builder.Configuration.AddEnvironmentVariables();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddRabbitMqExplorer(builder.Configuration);
 builder.Services.AddIbmMqExplorer(builder.Configuration);
+builder.Services.AddMsmqExplorer(builder.Configuration);
 builder.Services.AddExplorerPersistence(builder.Configuration.GetConnectionString("Explorer")
                                         ?? throw new InvalidOperationException("Missing connection string 'Explorer'."));
 

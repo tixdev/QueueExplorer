@@ -16,7 +16,7 @@ public sealed class ClusterOptions
     public required string Name { get; set; }
     public string? Description { get; set; }
 
-    /// <summary><c>rabbitmq</c> (default) or <c>ibmmq</c>; see <c>BrokerTypes</c>.</summary>
+    /// <summary><c>rabbitmq</c> (default), <c>ibmmq</c> or <c>msmq</c>; see <c>BrokerTypes</c>.</summary>
     public string Broker { get; set; } = "rabbitmq";
 
     // ---- RabbitMQ ----
@@ -31,11 +31,13 @@ public sealed class ClusterOptions
     /// </summary>
     public string? CaCertificatePath { get; set; }
 
-    public required string Username { get; set; }
-    public required string Password { get; set; }
+    /// <summary>Service account of RabbitMQ and IBM MQ; unused for MSMQ (the agent's Windows account reads the queues).</summary>
+    public string Username { get; set; } = "";
+    public string Password { get; set; } = "";
 
     // ---- IBM MQ ----
     public string? QueueManager { get; set; }
+    /// <summary>IBM MQ: host of the listener. MSMQ: the machine, as in MSMQ format names (e.g. msmq-01.example.com).</summary>
     public string? Host { get; set; }
     public int Port { get; set; } = 1414;
     /// <summary>Server-connection channel, e.g. APP.SVRCONN.</summary>
@@ -55,6 +57,12 @@ public sealed class ClusterOptions
     /// the queue manager's local time without saying which one it is.
     /// </summary>
     public string? TimeZone { get; set; }
+
+    // ---- MSMQ ----
+    /// <summary>The MSMQ agent that reads <see cref="Host"/> (e.g. https://msmq-agent.example.com:5180); one agent can serve several machines.</summary>
+    public Uri? AgentUrl { get; set; }
+    /// <summary>Shared secret of the agent (its Agent:ApiKey).</summary>
+    public string? AgentApiKey { get; set; }
 
     /// <summary>Per-cluster overrides of the refresh settings (e.g. slower polling for production).</summary>
     public RefreshOverrides? Refresh { get; set; }

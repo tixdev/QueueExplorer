@@ -12,6 +12,7 @@ public static class ServiceCollectionExtensions
     {
         services.Configure<ClustersOptions>(o => configuration.GetSection(ClustersOptions.SectionName).Bind(o.Items));
         services.Configure<RabbitMqOptions>(configuration.GetSection(RabbitMqOptions.SectionName));
+        services.Configure<QueueGroupsOptions>(o => configuration.GetSection(QueueGroupsOptions.SectionName).Bind(o.Items));
         services.AddSingleton<ClusterClients>();
         services.AddSingleton<ClusterSnapshotService>();
         services.AddHostedService(sp => sp.GetRequiredService<ClusterSnapshotService>());

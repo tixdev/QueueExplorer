@@ -10,7 +10,12 @@ namespace DynaQueueExplorer.Api.Endpoints;
 /// <param name="Limitations">What the RabbitMQ service account is not allowed to see on this cluster.</param>
 public sealed record SnapshotInfo(DateTimeOffset FetchedAt, int FetchMs, DateTimeOffset? LastErrorAt, string? LastError, IReadOnlyList<string> Limitations);
 
-public sealed record OverviewResponse(SnapshotInfo Snapshot, RmqOverview? Overview, IReadOnlyList<RmqNode>? Nodes, MqQueueManagerInfo? QueueManager = null);
+public sealed record OverviewResponse(SnapshotInfo Snapshot, RmqOverview? Overview, IReadOnlyList<RmqNode>? Nodes, MqQueueManagerInfo? QueueManager = null,
+    MsmqMachineInfo? Msmq = null);
+
+/// <param name="Host">The machine as in MSMQ format names.</param>
+/// <param name="DepthSource">How the agent read the depths (performance counters, or queue by queue).</param>
+public sealed record MsmqMachineInfo(string Name, string Host, string Agent, string DepthSource);
 
 public sealed record QueueDto(
     string Vhost,
@@ -37,7 +42,12 @@ public sealed record QueueDto(
     DateTimeOffset? LastPut = null,
     DateTimeOffset? LastGet = null,
     long? OldestMessageAgeSeconds = null,
-    bool? Transmission = null);
+    bool? Transmission = null,
+    // MSMQ only
+    long? Bytes = null,
+    long? JournalMessages = null,
+    bool? AtLeast = null,
+    IReadOnlyList<string>? NextHops = null);
 
 public sealed record ExchangeDto(string Vhost, string Name, string Type, bool Durable, bool AutoDelete, bool Internal, Dictionary<string, JsonElement>? Arguments);
 
@@ -92,7 +102,21 @@ public sealed record BrowsedMessage(
     DateTimeOffset? EditedAt = null,
     string? EditedBy = null,
     MqMessageView? IbmMq = null,
-    DateTimeOffset? SentAt = null);
+    DateTimeOffset? SentAt = null,
+    MsmqMessageView? Msmq = null);
+
+/// <summary>MSMQ view of a message: its properties and what the extension property holds.</summary>
+/// <param name="ClassDescription">Meaning of the message class; for a dead-lettered message, why it was dead-lettered.</param>
+/// <param name="Extension">How the extension was read: "NServiceBus headers", "text" or "binary"; null when empty.</param>
+/// <param name="ExtensionText">The extension as text when it is not NServiceBus headers.</param>
+public sealed record MsmqMessageView(
+    string Id,
+    string? Label,
+    int? Class,
+    string? ClassDescription,
+    IReadOnlyList<MqProperty> Properties,
+    string? Extension,
+    string? ExtensionText);
 
 /// <summary>IBM MQ view of a message: the MQMD, the header chain and how the body was decoded.</summary>
 /// <param name="RawBodyBase64">First bytes of a body decoded as text, for the hex view (binary bodies carry them in the body itself).</param>

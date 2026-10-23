@@ -27,14 +27,15 @@ public static class OverviewEndpoints
         cluster.MapPost("/errors/analyze", Analyze).RabbitMqOnly("Failure analysis");
     }
 
-    private static async Task<IResult> Trend(string cluster, int? minutes, CurrentUser user, ClusterTrends trends, CancellationToken ct)
+    /// <param name="group">Queue group name: the trend of that group's queues instead of the whole cluster.</param>
+    private static async Task<IResult> Trend(string cluster, int? minutes, string? group, CurrentUser user, ClusterTrends trends, CancellationToken ct)
     {
         var permissions = await user.GetPermissionsAsync(ct);
         if (!permissions.Allows(Permissions.OverviewRead, new ResourceRef(cluster)))
             return permissions.ActionsAnywhereIn(cluster).Count == 0 ? Results.NotFound() : Results.Forbid();
 
         var window = TimeSpan.FromMinutes(Math.Clamp(minutes ?? 60, 5, (int)MaxWindow.TotalMinutes));
-        return Results.Ok(new TrendResponse((int)(trends.Interval?.TotalSeconds ?? 0), trends.Get(cluster, window)));
+        return Results.Ok(new TrendResponse((int)(trends.Interval?.TotalSeconds ?? 0), trends.Get(cluster, window, string.IsNullOrEmpty(group) ? null : group)));
     }
 
     private static async Task<IResult> Errors(string cluster, CurrentUser user, ClusterSnapshotService snapshots, FailureAnalysis analysis, CancellationToken ct)

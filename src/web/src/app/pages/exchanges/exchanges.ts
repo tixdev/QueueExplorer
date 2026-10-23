@@ -35,6 +35,8 @@ export class ExchangesPage {
   readonly selected = signal<{ vhost: string; name: string } | null>(null);
 
   readonly vhosts = computed(() => this.store.topology()?.vhosts ?? []);
+  /** The chosen vhost, unless the queue group left it out: then every vhost of the group. */
+  readonly effectiveVhost = computed(() => (this.vhosts().includes(this.vhost()) ? this.vhost() : ''));
   private readonly from = (vhost: string, source: string) => this.store.bindingsFrom(vhost, source);
   private readonly queueOf = (vhost: string, name: string) => this.store.queue(vhost, name);
 
@@ -48,7 +50,7 @@ export class ExchangesPage {
   );
 
   readonly counts = computed(() => {
-    const vhost = this.vhost();
+    const vhost = this.effectiveVhost();
     const c = { all: 0, event: 0, endpoint: 0, other: 0 };
     for (const r of this.rows()) {
       if (vhost && r.exchange.vhost !== vhost) continue;
@@ -61,7 +63,7 @@ export class ExchangesPage {
   });
 
   readonly exchanges = computed(() => {
-    const vhost = this.vhost();
+    const vhost = this.effectiveVhost();
     const search = this.search().trim();
     const kind = this.kind();
     const hide = this.hideInfrastructure();

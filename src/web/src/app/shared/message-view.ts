@@ -2,14 +2,15 @@ import { ChangeDetectionStrategy, Component, computed, input, signal } from '@an
 import { BrowsedMessage } from '../core/models';
 import { BytesPipe, DateTimePipe, JsonValuePipe, RelativePipe, copyToClipboard } from './format';
 import { MqMessageDetails } from './mq-message-details';
+import { MsmqMessageDetails } from './msmq-message-details';
 import { highlight } from './syntax';
 
-type Tab = 'nsb' | 'ibmmq' | 'body' | 'headers' | 'properties';
+type Tab = 'nsb' | 'ibmmq' | 'msmq' | 'body' | 'headers' | 'properties';
 
 /** Detail of a browsed message, with a structured view for NServiceBus messages. */
 @Component({
   selector: 'app-message-view',
-  imports: [DateTimePipe, RelativePipe, BytesPipe, JsonValuePipe, MqMessageDetails],
+  imports: [DateTimePipe, RelativePipe, BytesPipe, JsonValuePipe, MqMessageDetails, MsmqMessageDetails],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './message-view.html',
 })
@@ -18,14 +19,18 @@ export class MessageView {
 
   private readonly selectedTab = signal<Tab | null>(null);
   readonly mq = computed(() => this.message().ibmMq);
+  readonly msmq = computed(() => this.message().msmq);
+  /** IBM MQ and MSMQ show their native properties in their own tab instead of the generic Properties table. */
+  readonly hasNativeTab = computed(() => !!this.mq() || !!this.msmq());
   readonly tab = computed<Tab>(() => {
     const selected = this.selectedTab();
     // A tab picked for one broker's message may not exist for the next one.
     if (selected === 'nsb' && this.nsb()) return selected;
     if (selected === 'ibmmq' && this.mq()) return selected;
-    if (selected === 'properties' && !this.mq()) return selected;
+    if (selected === 'msmq' && this.msmq()) return selected;
+    if (selected === 'properties' && !this.hasNativeTab()) return selected;
     if (selected === 'body' || selected === 'headers') return selected;
-    return this.nsb() ? 'nsb' : this.mq() ? 'ibmmq' : 'body';
+    return this.nsb() ? 'nsb' : this.mq() ? 'ibmmq' : this.msmq() ? 'msmq' : 'body';
   });
   readonly nsb = computed(() => this.message().nServiceBus);
   /** Hex instead of decoded text (IBM MQ bodies, to check a doubtful code page). */

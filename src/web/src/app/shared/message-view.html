@@ -7,11 +7,14 @@
     @if (mq()) {
       <button [class.active]="tab() === 'ibmmq'" (click)="selectTab('ibmmq')">IBM MQ</button>
     }
+    @if (msmq()) {
+      <button [class.active]="tab() === 'msmq'" (click)="selectTab('msmq')">MSMQ</button>
+    }
     <button [class.active]="tab() === 'body'" (click)="selectTab('body')">Body</button>
     <button [class.active]="tab() === 'headers'" (click)="selectTab('headers')">
       Header <span class="count">{{ headerEntries().length }}</span>
     </button>
-    @if (!mq()) {
+    @if (!hasNativeTab()) {
       <button [class.active]="tab() === 'properties'" (click)="selectTab('properties')">Properties</button>
     }
   </nav>
@@ -142,6 +145,9 @@
     }
     @case ('ibmmq') {
       <app-mq-message-details [view]="mq()!" />
+    }
+    @case ('msmq') {
+      <app-msmq-message-details [view]="msmq()!" />
     }
     @case ('body') {
       <section>

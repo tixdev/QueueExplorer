@@ -58,6 +58,11 @@ public sealed class RabbitMqManagementClient(HttpClient http, ClusterOptions clu
     public Task<RmqQueue> GetQueueBrowseSafetyAsync(string vhost, string name, CancellationToken ct) =>
         GetAsync($"api/queues/{Escape(vhost)}/{Escape(name)}?columns=name,vhost,type,messages,delivery_limit", RmqJsonContext.Default.RmqQueue, ct);
 
+    /// <summary>Depths of every queue and nothing else, for the trend sampler when queue groups need per-queue totals.</summary>
+    public Task<List<RmqQueue>> GetQueueDepthsAsync(CancellationToken ct) =>
+        GetAsync("api/queues?disable_stats=true&enable_queue_totals=true&columns=name,vhost,messages,messages_ready,messages_unacknowledged",
+            RmqJsonContext.Default.ListRmqQueue, ct);
+
     /// <summary>Depths of the error queues only, filtered by the broker (a few hundred bytes, for the trend sampler).</summary>
     public async Task<List<RmqQueueDepth>> GetErrorQueueDepthsAsync(CancellationToken ct)
     {

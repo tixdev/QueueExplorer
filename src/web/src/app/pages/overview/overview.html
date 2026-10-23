@@ -1,13 +1,13 @@
 @if (error(); as e) {
   <div class="banner error">{{ e }}</div>
 }
-<div class="ov">
+<div class="ov" [class.loading]="loading()" [attr.aria-busy]="loading()">
   <!-- KPI row -->
   <section class="ov-kpis">
     <div class="kpi">
       <span class="kpi-label">Messages</span>
-      <div class="kpi-main"><span class="kpi-value">{{ overview()?.queueTotals?.messages | num }}</span><app-sparkline [values]="sparkMessages()" /></div>
-      <span class="kpi-sub">{{ overview()?.queueTotals?.messagesReady | num }} ready · {{ overview()?.queueTotals?.messagesUnacknowledged | num }} unacked</span>
+      <div class="kpi-main"><span class="kpi-value">{{ totals().messages | num }}</span><app-sparkline [values]="sparkMessages()" /></div>
+      <span class="kpi-sub">{{ totals().ready | num }} ready · {{ totals().unacked | num }} unacked</span>
     </div>
     <div class="kpi">
       <span class="kpi-label">In error queues</span>
@@ -20,7 +20,7 @@
     <div class="kpi">
       <span class="kpi-label">Publish / deliver</span>
       <div class="kpi-main"><span class="kpi-value">{{ (overview()?.messageStats?.publishDetails?.rate ?? 0).toFixed(1) }} / {{ (overview()?.messageStats?.deliverGetDetails?.rate ?? 0).toFixed(1) }}</span></div>
-      <span class="kpi-sub">msg/s</span>
+      <span class="kpi-sub">msg/s{{ groupName() ? " · whole cluster" : "" }}</span>
     </div>
     <div class="kpi">
       <span class="kpi-label">Stopped endpoints</span>
@@ -29,11 +29,11 @@
     </div>
     <div class="kpi">
       <span class="kpi-label">Queues</span>
-      <div class="kpi-main"><span class="kpi-value">{{ overview()?.objectTotals?.queues | num }}</span></div>
-      <span class="kpi-sub">{{ overview()?.objectTotals?.exchanges | num }} exchanges</span>
+      <div class="kpi-main"><span class="kpi-value">{{ totals().queues | num }}</span></div>
+      <span class="kpi-sub">{{ totals().exchanges | num }} exchanges</span>
     </div>
     <div class="kpi">
-      <span class="kpi-label">Connections</span>
+      <span class="kpi-label">Connections{{ groupName() ? " · whole cluster" : "" }}</span>
       <div class="kpi-main"><span class="kpi-value">{{ overview()?.objectTotals?.connections | num }}</span></div>
       <span class="kpi-sub">
         @if (consumersKnown()) {
@@ -87,7 +87,7 @@
     <!-- Trend -->
     <section class="card ov-card">
       <header class="ov-head">
-        <h3>Trend</h3>
+        <h3>Trend @if (groupName()) { <span class="muted small">· {{ groupName() }}</span> }</h3>
         <span class="spacer"></span>
         <div class="segmented" role="group" aria-label="Trend window">
           @for (w of windows; track w.minutes) {

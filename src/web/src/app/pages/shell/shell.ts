@@ -5,11 +5,12 @@ import { map } from 'rxjs';
 import { Auth } from '../../core/auth';
 import { ClusterStore } from '../../core/cluster-store';
 import { Actions, Brokers, brokerLabel } from '../../core/models';
-import { RelativePipe } from '../../shared/format';
+import { QueueGroups } from '../../core/queue-groups';
+import { NumberPipe, RelativePipe } from '../../shared/format';
 
 @Component({
   selector: 'app-shell',
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, RelativePipe],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, RelativePipe, NumberPipe],
   providers: [ClusterStore],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './shell.html',
@@ -18,6 +19,7 @@ export class Shell {
   private readonly auth = inject(Auth);
   private readonly router = inject(Router);
   readonly store = inject(ClusterStore);
+  readonly queueGroups = inject(QueueGroups);
 
   readonly me = this.auth.me;
   readonly cluster = toSignal(inject(ActivatedRoute).paramMap.pipe(map((p) => p.get('cluster') ?? '')), { initialValue: '' });

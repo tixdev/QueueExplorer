@@ -1,8 +1,8 @@
 export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 
-export type BrokerId = 'rabbitmq' | 'ibmmq' | 'kafka';
+export type BrokerId = 'rabbitmq' | 'ibmmq' | 'msmq' | 'kafka';
 
-/** A connection the user can open: a RabbitMQ cluster or an IBM MQ queue manager. */
+/** A connection the user can open: a RabbitMQ cluster, an IBM MQ queue manager or an MSMQ machine. */
 export interface ClusterAccess {
   name: string;
   description?: string;
@@ -16,6 +16,22 @@ export interface Me {
   groups: string[];
   globalActions: string[];
   clusters: ClusterAccess[];
+  queueGroups: QueueGroup[];
+}
+
+/** Glob patterns (`*`, `?`, case-insensitive); an unset field matches everything. For IBM MQ the vhost is the queue manager. */
+export interface QueueGroupRule {
+  broker?: BrokerId;
+  cluster?: string;
+  vhost?: string;
+  queue?: string;
+}
+
+/** A named selection of queues across brokers (e.g. "T1 CH"); a queue belongs to it when any rule matches. */
+export interface QueueGroup {
+  name: string;
+  description?: string;
+  rules: QueueGroupRule[];
 }
 
 export interface SnapshotInfo {
@@ -85,6 +101,17 @@ export interface OverviewResponse {
   nodes?: RmqNode[];
   /** IBM MQ only. */
   queueManager?: MqQueueManager;
+  /** MSMQ only. */
+  msmq?: MsmqMachine;
+}
+
+/** An MSMQ machine read through the agent. */
+export interface MsmqMachine {
+  name: string;
+  host: string;
+  agent: string;
+  /** performance counters (one call) or queue management (queue by queue, slower). */
+  depthSource: string;
 }
 
 export interface Queue {
@@ -115,6 +142,12 @@ export interface Queue {
   lastGet?: string;
   oldestMessageAgeSeconds?: number;
   transmission?: boolean;
+  // MSMQ only: vhost is the machine, type the kind (private, outgoing, deadletter), state the outgoing connection state.
+  bytes?: number;
+  journalMessages?: number;
+  /** Dead-letter queues are counted by peeking up to a limit: there are at least `messages`. */
+  atLeast?: boolean;
+  nextHops?: string[];
 }
 
 export interface Exchange {
@@ -264,8 +297,22 @@ export interface BrowsedMessage {
   editedAt?: string;
   editedBy?: string;
   ibmMq?: MqMessageView;
+  msmq?: MsmqMessageView;
   /** When the message was produced: NServiceBus TimeSent, else the AMQP timestamp, else the IBM MQ put time. */
   sentAt?: string;
+}
+
+/** MSMQ part of a message: native properties and the extension. */
+export interface MsmqMessageView {
+  id: string;
+  label?: string;
+  class?: number;
+  /** For a dead-lettered message, why it was dead-lettered. */
+  classDescription?: string;
+  properties: MqProperty[];
+  /** NServiceBus headers, text or binary; absent when the extension is empty. */
+  extension?: string;
+  extensionText?: string;
 }
 
 export interface MqProperty {
@@ -338,6 +385,7 @@ export interface EditStagedMessageRequest {
 export const Brokers: { id: string; label: string }[] = [
   { id: 'rabbitmq', label: 'RabbitMQ' },
   { id: 'ibmmq', label: 'IBM MQ' },
+  { id: 'msmq', label: 'MSMQ' },
   { id: 'kafka', label: 'Kafka' },
 ];
 

@@ -1,12 +1,20 @@
 using System.Collections.Concurrent;
+using System.Text.Json.Serialization;
+using DynaQueueExplorer.Core.Clusters;
 using DynaQueueExplorer.Core.Messages;
+using DynaQueueExplorer.RabbitMq.Management;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace DynaQueueExplorer.RabbitMq.Snapshots;
 
-public sealed record TrendSample(DateTimeOffset At, long Messages, long Ready, long Unacked, long ErrorMessages);
+public sealed record TrendSample(DateTimeOffset At, long Messages, long Ready, long Unacked, long ErrorMessages)
+{
+    /// <summary>The same totals restricted to each queue group, by group name; served one group at a time.</summary>
+    [JsonIgnore]
+    public IReadOnlyDictionary<string, TrendSample>? Groups { get; init; }
+}
 
 /// <summary>
 /// Samples message totals and error-queue depths of every cluster at a fixed interval and keeps them in memory for the
@@ -17,18 +25,25 @@ public sealed class ClusterTrends(
     ClusterClients clients,
     ClusterSnapshotService snapshots,
     IOptions<RabbitMqOptions> options,
+    IOptions<QueueGroupsOptions> groups,
     TimeProvider time,
     ILogger<ClusterTrends> logger) : BackgroundService
 {
     private readonly ConcurrentDictionary<string, List<TrendSample>> _samples = new(StringComparer.Ordinal);
 
-    public IReadOnlyList<TrendSample> Get(string cluster, TimeSpan window)
+    /// <param name="group">A queue group: only the totals of its queues (samples taken before it existed are skipped).</param>
+    public IReadOnlyList<TrendSample> Get(string cluster, TimeSpan window, string? group = null)
     {
         if (!_samples.TryGetValue(cluster, out var samples))
             return [];
         var since = time.GetUtcNow() - window;
         lock (samples)
-            return samples.Where(s => s.At >= since).ToList();
+        {
+            var recent = samples.Where(s => s.At >= since);
+            return group is null
+                ? recent.ToList()
+                : recent.Select(s => s.Groups?.GetValueOrDefault(group)).OfType<TrendSample>().ToList();
+        }
     }
 
     public TimeSpan? Interval => options.Value.TrendSampleInterval;
@@ -70,11 +85,22 @@ public sealed class ClusterTrends(
         try
         {
             var now = time.GetUtcNow();
+            var queueGroups = groups.Value.Items;
             TrendSample sample;
             if (snapshots.Peek(cluster) is { } snapshot && now - snapshot.FetchedAt <= interval && snapshot.Overview.QueueTotals is { } totals)
             {
                 sample = new TrendSample(now, totals.Messages ?? 0, totals.MessagesReady ?? 0, totals.MessagesUnacknowledged ?? 0,
-                    snapshot.Queues.Where(q => QueueNaming.IsErrorQueue(q.Name)).Sum(q => q.Messages ?? 0));
+                    snapshot.Queues.Where(q => QueueNaming.IsErrorQueue(q.Name)).Sum(q => q.Messages ?? 0))
+                {
+                    Groups = GroupTotals(now, cluster, queueGroups, snapshot.Queues),
+                };
+            }
+            else if (queueGroups.Count > 0)
+            {
+                // Per-group totals need every queue's depth: one call with five columns instead of overview + error queues.
+                source = "management API";
+                var queues = await clients.Get(cluster).GetQueueDepthsAsync(ct);
+                sample = Totals(now, queues) with { Groups = GroupTotals(now, cluster, queueGroups, queues) };
             }
             else
             {
@@ -107,4 +133,26 @@ public sealed class ClusterTrends(
                 (int)System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds, e.Message);
         }
     }
+
+    private static TrendSample Totals(DateTimeOffset at, IEnumerable<RmqQueue> queues)
+    {
+        long messages = 0, ready = 0, unacked = 0, errors = 0;
+        foreach (var q in queues)
+        {
+            messages += q.Messages ?? 0;
+            ready += q.MessagesReady ?? 0;
+            unacked += q.MessagesUnacknowledged ?? 0;
+            if (QueueNaming.IsErrorQueue(q.Name))
+                errors += q.Messages ?? 0;
+        }
+        return new TrendSample(at, messages, ready, unacked, errors);
+    }
+
+    private static Dictionary<string, TrendSample>? GroupTotals(DateTimeOffset at, string cluster, List<QueueGroup> groups, IReadOnlyList<RmqQueue> queues) =>
+        groups.Count == 0
+            ? null
+            : groups.ToDictionary(
+                g => g.Name,
+                g => Totals(at, queues.Where(q => g.Contains(BrokerTypes.RabbitMq, cluster, q.Vhost, q.Name))),
+                StringComparer.Ordinal);
 }

@@ -1,9 +1,9 @@
 <div class="list-page">
   <div class="toolbar">
     <select (change)="vhost.set($any($event.target).value)">
-      <option value="" [selected]="!vhost()">All vhosts</option>
+      <option value="" [selected]="!effectiveVhost()">All vhosts</option>
       @for (v of vhosts(); track v) {
-        <option [value]="v" [selected]="v === vhost()">{{ v }}</option>
+        <option [value]="v" [selected]="v === effectiveVhost()">{{ v }}</option>
       }
     </select>
     <div class="segmented" role="group" aria-label="Exchange kind">
@@ -22,7 +22,7 @@
       <cdk-virtual-scroll-viewport itemSize="34" class="viewport">
         <button *cdkVirtualFor="let r of exchanges(); trackBy: track" class="row" [class.selected]="selected()?.vhost === r.exchange.vhost && selected()?.name === r.exchange.name" (click)="select(r.exchange)">
           <span class="cell name">
-            @if (!vhost()) { <span class="vhost">{{ r.exchange.vhost }}</span> }
+            @if (!effectiveVhost()) { <span class="vhost">{{ r.exchange.vhost }}</span> }
             @if (r.kind === 'event') {
               <span class="event-name"><strong>{{ eventName(r.exchange.name).name }}</strong> <span class="muted mono small">{{ eventName(r.exchange.name).ns }}</span></span>
             } @else {

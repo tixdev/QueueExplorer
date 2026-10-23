@@ -45,8 +45,21 @@ export interface DestinationChoice {
         @if (!retry()) {
           <div class="toolbar">
             <select (change)="setVhost($any($event.target).value)">
-              @for (v of vhosts(); track v) {
-                <option [value]="v" [selected]="v === vhost()">{{ v }}</option>
+              @if (vhostsOutsideGroup().length) {
+                <optgroup [label]="'In ' + groupName()">
+                  @for (v of vhostsInGroup(); track v) {
+                    <option [value]="v" [selected]="v === vhost()">{{ v }}</option>
+                  }
+                </optgroup>
+                <optgroup label="Other vhosts">
+                  @for (v of vhostsOutsideGroup(); track v) {
+                    <option [value]="v" [selected]="v === vhost()">{{ v }}</option>
+                  }
+                </optgroup>
+              } @else {
+                @for (v of vhostsInGroup(); track v) {
+                  <option [value]="v" [selected]="v === vhost()">{{ v }}</option>
+                }
               }
             </select>
             <input class="search" type="search" placeholder="Search queues…" [value]="search()" (input)="search.set($any($event.target).value)" />
@@ -111,17 +124,25 @@ export class DestinationDialog {
   readonly queue = signal<string | null>(null);
   private readonly selectedVhost = signal<string | null>(null);
 
-  readonly vhosts = computed(() => this.store.topology()?.vhosts ?? []);
-  readonly vhost = computed(() => this.selectedVhost() ?? (this.initialVhost() || this.vhosts()[0] || ''));
+  // The selected queue group comes first, but any vhost can be chosen: moving out of a group is deliberate, not blocked.
+  readonly groupName = computed(() => this.store.group()?.group.name ?? '');
+  readonly vhostsInGroup = computed(() => this.store.topology()?.vhosts ?? []);
+  readonly vhostsOutsideGroup = computed(() => {
+    if (!this.store.group()) return [];
+    const inGroup = new Set(this.vhostsInGroup());
+    return (this.store.fullTopology()?.vhosts ?? []).filter((v) => !inGroup.has(v));
+  });
+  readonly vhost = computed(() => this.selectedVhost() ?? (this.initialVhost() || this.vhostsInGroup()[0] || this.vhostsOutsideGroup()[0] || ''));
 
   readonly queues = computed(() => {
     const vhost = this.vhost();
     const exclude = this.exclude();
-    return (this.store.topology()?.queues ?? [])
+    // Group members first within the vhost; for a rule on queue names (IBM MQ) the others follow.
+    return (this.store.fullTopology()?.queues ?? [])
       .filter((q) => q.vhost === vhost && !isNsbInfrastructure(q.name) && !(exclude && exclude.vhost === q.vhost && exclude.queue === q.name))
       .map((q) => q.name)
       .filter((name) => matchesSearch(name, this.search()))
-      .sort((a, b) => a.localeCompare(b));
+      .sort((a, b) => Number(this.store.inGroup(vhost, b)) - Number(this.store.inGroup(vhost, a)) || a.localeCompare(b));
   });
 
   setVhost(vhost: string): void {

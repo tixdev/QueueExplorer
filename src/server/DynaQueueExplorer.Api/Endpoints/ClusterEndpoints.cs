@@ -1,5 +1,7 @@
 using DynaQueueExplorer.IbmMq.Client;
 using DynaQueueExplorer.IbmMq.Snapshots;
+using DynaQueueExplorer.Core.Msmq;
+using DynaQueueExplorer.Msmq;
 using System.Text.Json;
 using DynaQueueExplorer.Api.Http;
 using DynaQueueExplorer.Api.Security;
@@ -32,13 +34,28 @@ public static class ClusterEndpoints
     }
 
     private static async Task<IResult> GetOverview(
-        string cluster, HttpContext http, CurrentUser user, ClusterSnapshotService snapshots, MqSnapshotService mq, ConditionalJson conditional, CancellationToken ct)
+        string cluster, HttpContext http, CurrentUser user, ClusterSnapshotService snapshots, MqSnapshotService mq, MsmqSnapshotService msmq,
+        MsmqAgentClients agents, ConditionalJson conditional, CancellationToken ct)
     {
         var permissions = await user.GetPermissionsAsync(ct);
         var canOverview = permissions.Allows(Permissions.OverviewRead, new ResourceRef(cluster));
         var canNodes = permissions.Allows(Permissions.NodesRead, new ResourceRef(cluster));
         if (!canOverview && !canNodes)
             return NotFoundOrForbidden(permissions, cluster);
+
+        if (msmq.Exists(cluster))
+        {
+            var s = await msmq.GetSnapshotAsync(cluster, ct);
+            var options = agents.Options(cluster);
+            // Local queues only: outgoing queues hold messages on their way to other machines.
+            var local = s.Queues.Where(q => q.Kind != MsmqQueueKinds.Outgoing).ToList();
+            return conditional.Respond(http, "overview", cluster, s.Version, await user.GetPermissionFingerprintAsync(ct), () =>
+                new OverviewResponse(MsmqInfo(msmq, s), canOverview
+                    ? new RmqOverview(s.Machine, null, null, "MSMQ", null,
+                        new RmqQueueTotals(local.Sum(q => q.Messages ?? 0), local.Sum(q => q.Messages ?? 0), 0),
+                        new RmqObjectTotals(Queues: local.Count))
+                    : null, null, null, new MsmqMachineInfo(s.Machine, options.Host!, options.AgentUrl!.Authority, s.DepthSource)));
+        }
 
         if (mq.Exists(cluster))
         {
@@ -57,11 +74,18 @@ public static class ClusterEndpoints
     }
 
     private static async Task<IResult> GetTopology(
-        string cluster, HttpContext http, CurrentUser user, ClusterSnapshotService snapshots, MqSnapshotService mq, ConditionalJson conditional, CancellationToken ct)
+        string cluster, HttpContext http, CurrentUser user, ClusterSnapshotService snapshots, MqSnapshotService mq, MsmqSnapshotService msmq,
+        ConditionalJson conditional, CancellationToken ct)
     {
         var permissions = await user.GetPermissionsAsync(ct);
         if (!permissions.AllowsAnywhere(Permissions.QueuesRead, cluster) && !permissions.AllowsAnywhere(Permissions.ExchangesRead, cluster))
             return NotFoundOrForbidden(permissions, cluster);
+
+        if (msmq.Exists(cluster))
+        {
+            var s = await msmq.GetSnapshotAsync(cluster, ct);
+            return conditional.Respond(http, "topology", cluster, s.Version, await user.GetPermissionFingerprintAsync(ct), () => BuildMsmqTopology(msmq, s, permissions));
+        }
 
         if (mq.Exists(cluster))
         {
@@ -86,6 +110,29 @@ public static class ClusterEndpoints
                 q.MaxDepth, q.OpenOutput, q.InhibitGet, q.InhibitPut, q.Target, q.Description, q.LastPut, q.LastGet, q.OldestMessageAgeSeconds, q.Transmission))
             .ToList();
         return new TopologyResponse(MqInfo(mq, m), queues.Count > 0 ? [qmgr] : [], queues, [], []);
+    }
+
+    /// <summary>
+    /// MSMQ queues in the same shape as RabbitMQ's; the machine plays the role of the vhost (also for RBAC). Outgoing
+    /// queues cannot be browsed (their messages are on their way to another machine).
+    /// </summary>
+    private static TopologyResponse BuildMsmqTopology(MsmqSnapshotService msmq, MsmqSnapshot s, PermissionSet permissions)
+    {
+        var machine = s.Machine;
+        var queues = s.Queues
+            .Where(q => permissions.Allows(Permissions.QueuesRead, new ResourceRef(s.Cluster, machine, q.Name)))
+            .Select(q => new QueueDto(machine, q.Name, q.Kind, q.State ?? (q.Messages is null ? "unknown" : "available"),
+                true, false, false, null, q.Messages, q.Messages, null, null, null,
+                q.Kind != MsmqQueueKinds.Outgoing && permissions.Allows(Permissions.MessagesBrowse, new ResourceRef(s.Cluster, machine, q.Name)),
+                Bytes: q.Bytes, JournalMessages: q.JournalMessages, AtLeast: q.AtLeast ? true : null, NextHops: q.NextHops is { Count: > 0 } ? q.NextHops : null))
+            .ToList();
+        return new TopologyResponse(MsmqInfo(msmq, s), queues.Count > 0 ? [machine] : [], queues, [], []);
+    }
+
+    private static SnapshotInfo MsmqInfo(MsmqSnapshotService msmq, MsmqSnapshot s)
+    {
+        var (lastErrorAt, lastError) = msmq.GetHealth(s.Cluster);
+        return new SnapshotInfo(s.FetchedAt, (int)s.FetchDuration.TotalMilliseconds, lastErrorAt, lastError, s.Limitations);
     }
 
     private static SnapshotInfo MqInfo(MqSnapshotService mq, MqSnapshot m)
@@ -188,11 +235,14 @@ public static class ClusterEndpoints
         return Results.Ok(new QueueDetailResponse(await queue, bindings));
     }
 
-    private static async Task<IResult> Refresh(string cluster, CurrentUser user, ClusterSnapshotService snapshots, MqSnapshotService mq, CancellationToken ct)
+    private static async Task<IResult> Refresh(string cluster, CurrentUser user, ClusterSnapshotService snapshots, MqSnapshotService mq, MsmqSnapshotService msmq,
+        CancellationToken ct)
     {
         var permissions = await user.GetPermissionsAsync(ct);
         if (permissions.ActionsAnywhereIn(cluster).Count == 0)
             return NotFoundOrForbidden(permissions, cluster);
+        if (msmq.Exists(cluster))
+            return Results.Ok(MsmqInfo(msmq, await msmq.RefreshAsync(cluster, ct)));
         if (mq.Exists(cluster))
             return Results.Ok(MqInfo(mq, await mq.RefreshAsync(cluster, ct)));
 
@@ -208,6 +258,9 @@ public static class ClusterEndpoints
         ClusterClients clients,
         MqSnapshotService mq,
         MqBrowser mqBrowser,
+        MsmqSnapshotService msmq,
+        MsmqAgentClients agents,
+        IOptions<MsmqOptions> msmqOptions,
         IAuditLog audit,
         IOptions<RabbitMqOptions> options,
         CancellationToken ct)
@@ -217,6 +270,17 @@ public static class ClusterEndpoints
         {
             await audit.WriteAsync(new AuditRecord(user.Username, Permissions.MessagesBrowse, AuditOutcome.Denied, cluster, request.Vhost, request.Queue), ct);
             return NotFoundOrForbidden(permissions, cluster);
+        }
+
+        if (msmq.Exists(cluster))
+        {
+            // MSMQ peeking is non-destructive too; the agent only accepts the machine's own queues (not outgoing ones).
+            var response = await agents.BrowseAsync(cluster, new MsmqBrowseRequest(request.Queue, Math.Clamp(request.Count, 1, MaxBrowseCount),
+                msmqOptions.Value.BrowseTruncateBytes), ct);
+            var depth = (await msmq.GetSnapshotAsync(cluster, ct)).Queues.FirstOrDefault(q => q.Name.Equals(request.Queue, StringComparison.OrdinalIgnoreCase))?.Messages;
+            await audit.WriteAsync(new AuditRecord(user.Username, Permissions.MessagesBrowse, AuditOutcome.Success, cluster, request.Vhost, request.Queue,
+                $"returned={response.Messages.Count}"), ct);
+            return Results.Ok(new BrowseResponse("msmq", null, depth, [], response.Messages.Select((m, i) => MessageViews.FromMsmq(i, m)).ToList()));
         }
 
         if (mq.Exists(cluster))

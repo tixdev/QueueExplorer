@@ -1,9 +1,9 @@
 <div class="list-page">
   <div class="toolbar">
     <select (change)="vhost.set($any($event.target).value)">
-      <option value="" [selected]="!vhost()">All vhosts</option>
+      <option value="" [selected]="!effectiveVhost()">All vhosts</option>
       @for (v of vhosts(); track v) {
-        <option [value]="v" [selected]="v === vhost()">{{ v }}</option>
+        <option [value]="v" [selected]="v === effectiveVhost()">{{ v }}</option>
       }
     </select>
     <input class="search" type="search" placeholder="Search queues…" [value]="search()" (input)="search.set($any($event.target).value)" />
@@ -29,7 +29,7 @@
     <cdk-virtual-scroll-viewport itemSize="34" class="viewport">
       <a *cdkVirtualFor="let q of queues(); trackBy: trackQueue" class="row" [routerLink]="['/c', store.cluster(), 'queues', q.vhost, q.name]">
         <span class="cell name">
-          @if (!vhost()) { <span class="vhost">{{ q.vhost }}</span> }
+          @if (!effectiveVhost()) { <span class="vhost">{{ q.vhost }}</span> }
           <span class="mono" [class.error-queue]="isErrorQueue(q)">{{ q.name }}</span>
         </span>
         <span class="cell"><span class="badge muted">{{ q.type }}</span></span>

@@ -2,8 +2,9 @@ import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/c
 import { RouterLink } from '@angular/router';
 import { EMPTY } from 'rxjs';
 import { Api } from '../../core/api';
+import { Auth } from '../../core/auth';
 import { ClusterStore } from '../../core/cluster-store';
-import { Queue } from '../../core/models';
+import { Actions, Queue } from '../../core/models';
 import { poll } from '../../core/polling';
 import { NumberPipe } from '../../shared/format';
 import { Status, StatusIcon } from '../../shared/status-icon';
@@ -25,6 +26,7 @@ interface HealthItem {
 })
 export class MqOverviewPage {
   private readonly api = inject(Api);
+  private readonly auth = inject(Auth);
   readonly store = inject(ClusterStore);
 
   // Served from the server's snapshot, like the queue list: polling does not reach the queue manager.
@@ -34,8 +36,23 @@ export class MqOverviewPage {
   }, 5000);
 
   readonly error = this.overviewPoll.error;
+  /**
+   * Until the first answers arrive the cards show placeholders, not zeros and "all normal": the first read of a queue
+   * manager (connection, TLS, PCF) takes seconds.
+   */
+  readonly loading = computed(() => {
+    if (this.error() || this.store.error()) return false;
+    const cluster = this.store.cluster() ?? '';
+    const queuesPending = this.auth.can(cluster, Actions.queuesRead) && this.store.fullTopology() === undefined;
+    return this.overviewPoll.value() === undefined || queuesPending;
+  });
   readonly qmgr = computed(() => this.overviewPoll.value()?.queueManager);
-  readonly totalDepth = computed(() => this.overviewPoll.value()?.overview?.queueTotals?.messages);
+  /** The queue manager's total, or with a queue group the sum of the group's queues. */
+  readonly totalDepth = computed(() =>
+    this.store.group()
+      ? (this.store.topology()?.queues ?? []).reduce((n, q) => n + (q.messages ?? 0), 0)
+      : this.overviewPoll.value()?.overview?.queueTotals?.messages,
+  );
   /** Application queues: SYSTEM.* queues only appear where they matter (dead-letter, transmission). */
   readonly queues = computed(() => (this.store.topology()?.queues ?? []).filter((q) => !isSystemQueue(q.name) || q.type === 'xmitq'));
 

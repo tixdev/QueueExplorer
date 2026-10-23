@@ -1,0 +1,43 @@
+<div class="list-page">
+  <div class="toolbar">
+    <select (change)="kind.set($any($event.target).value)" aria-label="Queue kind">
+      <option value="" [selected]="!kind()">All queues</option>
+      @for (k of kinds; track k) {
+        <option [value]="k" [selected]="k === kind()">{{ kindLabels[k] }}</option>
+      }
+    </select>
+    <input class="search" type="search" placeholder="Search queues…" [value]="search()" (input)="search.set($any($event.target).value)" />
+    <label class="check" title="retries, timeouts, timeoutsdispatcher, distributor.control/storage, subscriptions">
+      <input type="checkbox" [checked]="hideInfrastructure()" (change)="hideInfrastructure.set($any($event.target).checked)" /> Hide NServiceBus infrastructure
+    </label>
+    <label class="check"><input type="checkbox" [checked]="onlyWithMessages()" (change)="onlyWithMessages.set($any($event.target).checked)" /> Only with messages</label>
+    <span class="spacer"></span>
+    <span class="muted">{{ totals().count | num }} queues · {{ totals().messages | num }} messages</span>
+  </div>
+
+  <div class="table msmq-queues-table">
+    <div class="thead row">
+      <button class="th sortable" [class.sorted]="sort() === 'name'" (click)="sort.set('name')">Queue</button>
+      <span class="th">Kind</span>
+      <button class="th num sortable" [class.sorted]="sort() === 'messages'" (click)="sort.set('messages')">Messages</button>
+      <button class="th num sortable" [class.sorted]="sort() === 'bytes'" (click)="sort.set('bytes')">Size</button>
+      <span class="th num" title="Messages kept in the queue's journal">Journal</span>
+      <span class="th" title="Outgoing queues: connection to the destination machine">State</span>
+    </div>
+    @if (store.loading()) {
+      <p class="muted pad">Loading queues… the first read of an MSMQ machine can take a while.</p>
+    }
+    <cdk-virtual-scroll-viewport itemSize="34" class="viewport">
+      <a *cdkVirtualFor="let q of queues(); trackBy: trackQueue" class="row" [routerLink]="['/c', store.cluster(), 'queues', q.vhost, q.name]">
+        <span class="cell name" [title]="q.name">
+          <span class="mono" [class.error-queue]="isErrorQueue(q)">{{ shortName(q) }}</span>
+        </span>
+        <span class="cell"><span class="badge" [class.muted]="q.type === 'private'" [class.warn]="q.type === 'deadletter' && (q.messages ?? 0) > 0">{{ kindLabels[q.type ?? ''] ?? q.type }}</span></span>
+        <span class="cell num" [class.hot]="(q.messages ?? 0) > 0 && (isErrorQueue(q) || q.type === 'deadletter')">{{ messagesLabel(q) }}</span>
+        <span class="cell num">{{ q.bytes ? (q.bytes | bytes) : '' }}</span>
+        <span class="cell num">{{ q.journalMessages ? (q.journalMessages | num) : '' }}</span>
+        <span class="cell" [class.warn-text]="isStuck(q)" [title]="q.nextHops?.join(', ') ?? ''">{{ q.type === 'outgoing' ? (q.state ?? '') : '' }}</span>
+      </a>
+    </cdk-virtual-scroll-viewport>
+  </div>
+</div>

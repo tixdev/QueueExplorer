@@ -57,8 +57,9 @@ export class Api {
     return this.tagged(this.http.get<Shovel[]>(`${base(cluster)}/shovels`, { observe: 'response' }));
   }
 
-  trend(cluster: string, minutes: number): Observable<TrendResponse> {
-    return this.http.get<TrendResponse>(`${base(cluster)}/trend`, { params: { minutes } });
+  /** With a queue group, the trend of that group's queues only. */
+  trend(cluster: string, minutes: number, group?: string): Observable<TrendResponse> {
+    return this.http.get<TrendResponse>(`${base(cluster)}/trend`, { params: group ? { minutes, group } : { minutes } });
   }
 
   errorQueues(cluster: string): Observable<ErrorQueueSummary[]> {

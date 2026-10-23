@@ -33,10 +33,12 @@ export class QueuesPage {
   readonly sort = persistedSignal<SortKey>('queues.sort', 'name');
 
   readonly vhosts = computed(() => this.store.topology()?.vhosts ?? []);
+  /** The chosen vhost, unless the queue group left it out: then every vhost of the group. */
+  readonly effectiveVhost = computed(() => (this.vhosts().includes(this.vhost()) ? this.vhost() : ''));
 
   readonly queues = computed(() => {
     const all = this.store.topology()?.queues ?? [];
-    const vhost = this.vhost();
+    const vhost = this.effectiveVhost();
     const search = this.search().trim();
     const hideInfra = this.hideInfrastructure();
     const onlyWithMessages = this.onlyWithMessages();

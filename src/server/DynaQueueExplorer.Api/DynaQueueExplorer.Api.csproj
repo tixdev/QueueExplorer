@@ -6,6 +6,7 @@
     <ProjectReference Include="..\DynaQueueExplorer.NServiceBus\DynaQueueExplorer.NServiceBus.csproj" />
     <ProjectReference Include="..\DynaQueueExplorer.Infrastructure\DynaQueueExplorer.Infrastructure.csproj" />
     <ProjectReference Include="..\DynaQueueExplorer.IbmMq\DynaQueueExplorer.IbmMq.csproj" />
+    <ProjectReference Include="..\DynaQueueExplorer.Msmq\DynaQueueExplorer.Msmq.csproj" />
   </ItemGroup>
 
   <ItemGroup>
