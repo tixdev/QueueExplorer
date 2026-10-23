@@ -1564,3 +1564,12 @@ pre.syntax .tag { color: var(--syn-tag); }
 pre.syntax .attr { color: var(--syn-attr); }
 pre.syntax .comment,
 pre.syntax .decl { color: var(--syn-comment); font-style: italic; }
+.status-icon.info { fill: var(--muted); }
+.limitations {
+  margin-top: 0.6rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}

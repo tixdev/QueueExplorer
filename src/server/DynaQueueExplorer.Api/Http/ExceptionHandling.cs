@@ -1,4 +1,5 @@
 using DynaQueueExplorer.RabbitMq.Management;
+using RabbitMQ.Client.Exceptions;
 using Microsoft.AspNetCore.Diagnostics;
 
 namespace DynaQueueExplorer.Api.Http;
@@ -7,11 +8,19 @@ public sealed class ExplorerExceptionHandler(IProblemDetailsService problems) : 
 {
     public async ValueTask<bool> TryHandleAsync(HttpContext http, Exception exception, CancellationToken ct)
     {
-        var (status, title) = exception switch
+        // RabbitMQ refusing the service account is a configuration problem of the explorer, not a missing permission
+        // of the user (that would be a 403 from our own RBAC): answer 502 with an explicit title.
+        var (status, title, detail) = exception switch
         {
-            RabbitMqApiException => (StatusCodes.Status502BadGateway, "RabbitMQ request failed"),
-            KeyNotFoundException => (StatusCodes.Status404NotFound, "Not found"),
-            _ => (0, null),
+            RabbitMqApiException { IsAccessDenied: true } e => (StatusCodes.Status502BadGateway, "RabbitMQ refused the service account",
+                $"The RabbitMQ account used by the explorer lacks a permission or tag for this operation. {e.Message}"),
+            RabbitMqApiException e => (StatusCodes.Status502BadGateway, "RabbitMQ request failed", e.Message),
+            OperationInterruptedException { ShutdownReason.ReplyCode: 403 } e => (StatusCodes.Status502BadGateway, "RabbitMQ refused the service account",
+                $"The RabbitMQ account used by the explorer lacks a vhost permission (configure/write/read) for this operation: {e.ShutdownReason?.ReplyText}"),
+            OperationInterruptedException e => (StatusCodes.Status502BadGateway, "RabbitMQ operation failed", e.ShutdownReason?.ReplyText ?? e.Message),
+            BrokerUnreachableException e => (StatusCodes.Status502BadGateway, "RabbitMQ is unreachable over AMQP", e.InnerException?.Message ?? e.Message),
+            KeyNotFoundException e => (StatusCodes.Status404NotFound, "Not found", e.Message),
+            _ => (0, null, null),
         };
         if (status == 0)
             return false;
@@ -21,7 +30,7 @@ public sealed class ExplorerExceptionHandler(IProblemDetailsService problems) : 
         {
             HttpContext = http,
             Exception = exception,
-            ProblemDetails = { Status = status, Title = title, Detail = exception.Message },
+            ProblemDetails = { Status = status, Title = title, Detail = detail },
         });
     }
 }

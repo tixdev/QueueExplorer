@@ -22,7 +22,12 @@ public sealed record ClusterSnapshot(
     IReadOnlyList<RmqExchange> Exchanges,
     IReadOnlyList<RmqBinding> Bindings,
     IReadOnlyList<RmqShovelStatus> ShovelStatuses,
-    IReadOnlyList<RmqParameter> ShovelDefinitions);
+    IReadOnlyList<RmqParameter> ShovelDefinitions,
+    IReadOnlyList<string> Limitations)
+{
+    /// <summary>False when the service account only sees its own consumers: per-queue counts are then unknown (null).</summary>
+    public bool ConsumersKnown { get; init; } = true;
+}
 
 public sealed record ClusterHealth(
     string Cluster,

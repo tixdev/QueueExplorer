@@ -105,7 +105,8 @@ export class OverviewPage {
   // ---- Stopped endpoints: messages waiting, nothing consuming them ------------------------------------------------
   readonly stopped = computed(() =>
     this.queues()
-      .filter((q) => (q.messages ?? 0) > 0 && (q.consumers ?? 0) === 0 && !isError(q.name) && !isAudit(q.name) && !isNsbInfrastructure(q.name))
+      // consumers is null when the service account cannot see other consumers: unknown is not "stopped".
+      .filter((q) => (q.messages ?? 0) > 0 && q.consumers === 0 && !isError(q.name) && !isAudit(q.name) && !isNsbInfrastructure(q.name))
       .sort(byMessages),
   );
 
@@ -195,6 +196,9 @@ export class OverviewPage {
     if (errors) items.push({ status: 'warning', text: `${errors.toLocaleString('en-GB')} messages in error queues`, link: ['/c', cluster, 'queues'], query: { withMessages: 1, sort: 'messages' } });
     return items;
   });
+  readonly limitations = computed(() => (this.store.topology()?.snapshot ?? this.data()?.snapshot)?.limitations ?? []);
+  readonly consumersKnown = computed(() => !this.limitations().some((l) => l.startsWith('Consumer counts')));
+
   readonly worst = computed<Status>(() => {
     const order: Status[] = ['critical', 'serious', 'warning'];
     return order.find((s) => this.health().some((h) => h.status === s)) ?? 'good';

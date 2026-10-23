@@ -24,8 +24,8 @@
     </div>
     <div class="kpi">
       <span class="kpi-label">Stopped endpoints</span>
-      <div class="kpi-main"><span class="kpi-value">{{ stopped().length | num }}</span></div>
-      <span class="kpi-sub">messages waiting, no consumers</span>
+      <div class="kpi-main"><span class="kpi-value">{{ consumersKnown() ? (stopped().length | num) : '–' }}</span></div>
+      <span class="kpi-sub">{{ consumersKnown() ? 'messages waiting, no consumers' : 'consumer counts not visible' }}</span>
     </div>
     <div class="kpi">
       <span class="kpi-label">Queues</span>
@@ -35,7 +35,13 @@
     <div class="kpi">
       <span class="kpi-label">Connections</span>
       <div class="kpi-main"><span class="kpi-value">{{ overview()?.objectTotals?.connections | num }}</span></div>
-      <span class="kpi-sub">{{ overview()?.objectTotals?.channels | num }} channels · {{ overview()?.objectTotals?.consumers | num }} consumers</span>
+      <span class="kpi-sub">
+        @if (consumersKnown()) {
+          {{ overview()?.objectTotals?.channels | num }} channels · {{ overview()?.objectTotals?.consumers | num }} consumers
+        } @else {
+          the service account's own only
+        }
+      </span>
     </div>
   </section>
 
@@ -65,6 +71,16 @@
         </ul>
       } @else {
         <p class="health-ok"><app-status-icon status="good" /> All systems normal</p>
+      }
+      @if (limitations().length) {
+        <div class="limitations">
+          <span class="muted small">Limited visibility — the RabbitMQ service account cannot read everything:</span>
+          <ul class="health-list">
+            @for (l of limitations(); track l) {
+              <li><app-status-icon status="info" /><span class="small">{{ l }}</span></li>
+            }
+          </ul>
+        </div>
       }
     </section>
 

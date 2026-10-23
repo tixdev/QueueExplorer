@@ -19,6 +19,8 @@ export interface SnapshotInfo {
   fetchMs: number;
   lastErrorAt?: string;
   lastError?: string;
+  /** What the RabbitMQ service account is not allowed to see on this cluster. */
+  limitations: string[];
 }
 
 export interface Rate {

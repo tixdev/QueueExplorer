@@ -156,16 +156,27 @@ public sealed class ClusterSnapshotService(
             var ct = cts.Token;
 
             // All calls of the cycle run concurrently over the cluster's capped connection pool.
+            // Node resources and shovel status need the monitoring tag: a service account without it still gets
+            // everything else, and the snapshot lists what is missing.
             var overview = client.GetOverviewAsync(ct, metrics);
-            var nodes = client.GetNodesAsync(ct, metrics);
+            var nodes = Optional(client.GetNodesAsync(ct, metrics));
             var queues = client.GetQueuesAsync(ct, stateFingerprint);
             var consumers = client.GetConsumersAsync(ct, stateFingerprint);
-            var shovelStatuses = client.GetShovelStatusesAsync(ct, stateFingerprint);
+            var shovelStatuses = Optional(client.GetShovelStatusesAsync(ct, stateFingerprint));
             var structureTask = readStructure ? ReadStructureAsync(client, ct) : null;
             await Task.WhenAll(overview, nodes, queues, consumers, shovelStatuses, structureTask ?? Task.CompletedTask);
 
             if (structureTask is not null)
                 state.Structure = structure = await structureTask;
+
+            var consumersKnown = structure!.WhoAmI?.SeesEveryConsumer ?? true;
+            var limitations = new List<string>(structure.Limitations);
+            if (nodes.Result is null)
+                limitations.Add("Node resources are not available: the service account needs the 'monitoring' tag.");
+            if (shovelStatuses.Result is null)
+                limitations.Add("Shovel status is not available: the service account needs the 'monitoring' tag.");
+            if (!consumersKnown)
+                limitations.Add("Consumer counts are unknown: without the 'monitoring' tag RabbitMQ only lists the service account's own consumers.");
 
             var snapshot = new ClusterSnapshot(
                 state.Cluster,
@@ -175,13 +186,17 @@ public sealed class ClusterSnapshotService(
                 Combine(stateFingerprint.Value, structure.Version),
                 metrics.Value,
                 overview.Result,
-                nodes.Result,
+                nodes.Result ?? [],
                 structure.Vhosts,
-                WithConsumerCounts(queues.Result, consumers.Result),
+                consumersKnown ? WithConsumerCounts(queues.Result, consumers.Result) : queues.Result.Select(q => q with { Consumers = null }).ToList(),
                 structure.Exchanges,
                 structure.Bindings,
-                shovelStatuses.Result,
-                structure.ShovelDefinitions);
+                shovelStatuses.Result ?? [],
+                structure.ShovelDefinitions,
+                limitations)
+            {
+                ConsumersKnown = consumersKnown,
+            };
 
             state.Snapshot = snapshot;
             state.LastError = null;
@@ -209,12 +224,38 @@ public sealed class ClusterSnapshotService(
     private async Task<Structure> ReadStructureAsync(RabbitMqManagementClient client, CancellationToken ct)
     {
         var fingerprint = new PayloadFingerprint();
+        var whoAmI = Optional(client.GetWhoAmIAsync(ct));
         var vhosts = client.GetVhostsAsync(ct, fingerprint);
         var exchanges = client.GetExchangesAsync(ct, fingerprint);
         var bindings = client.GetBindingsAsync(ct, fingerprint);
-        var shovelDefinitions = client.GetShovelDefinitionsAsync(ct, fingerprint);
-        await Task.WhenAll(vhosts, exchanges, bindings, shovelDefinitions);
-        return new Structure(time.GetUtcNow(), fingerprint.Value, vhosts.Result, exchanges.Result, bindings.Result, shovelDefinitions.Result);
+        // Reading runtime parameters needs the policymaker or administrator tag.
+        var shovelDefinitions = Optional(client.GetShovelDefinitionsAsync(ct, fingerprint));
+        await Task.WhenAll(whoAmI, vhosts, exchanges, bindings, shovelDefinitions);
+
+        var limitations = new List<string>();
+        if (shovelDefinitions.Result is null)
+            limitations.Add("Shovel definitions are not available: the service account needs the 'policymaker' or 'administrator' tag.");
+        // Every vhost has at least the amq.* exchanges: a vhost without any is one the account has no permissions on.
+        var withExchanges = exchanges.Result.Select(e => e.Vhost).ToHashSet(StringComparer.Ordinal);
+        var unreadable = vhosts.Result.Select(v => v.Name).Where(v => !withExchanges.Contains(v)).ToList();
+        if (unreadable.Count > 0)
+            limitations.Add($"No permissions on {unreadable.Count} vhost(s): {string.Join(", ", unreadable.Take(5))}{(unreadable.Count > 5 ? ", …" : "")}. Their queues and exchanges are not listed.");
+
+        return new Structure(time.GetUtcNow(), fingerprint.Value, vhosts.Result, exchanges.Result, bindings.Result,
+            shovelDefinitions.Result ?? [], whoAmI.Result, limitations);
+    }
+
+    /// <summary>A call whose data the service account may not be allowed to read: access denied gives null.</summary>
+    private static async Task<T?> Optional<T>(Task<T> call) where T : class
+    {
+        try
+        {
+            return await call;
+        }
+        catch (RabbitMqApiException e) when (e.IsAccessDenied)
+        {
+            return null;
+        }
     }
 
     /// <summary>Order-dependent mix of the two tier versions, so a change in either changes the topology version.</summary>
@@ -252,7 +293,9 @@ public sealed class ClusterSnapshotService(
         List<RmqVhost> Vhosts,
         List<RmqExchange> Exchanges,
         List<RmqBinding> Bindings,
-        List<RmqParameter> ShovelDefinitions);
+        List<RmqParameter> ShovelDefinitions,
+        RmqWhoAmI? WhoAmI,
+        IReadOnlyList<string> Limitations);
 
     private sealed class ClusterState(string cluster)
     {

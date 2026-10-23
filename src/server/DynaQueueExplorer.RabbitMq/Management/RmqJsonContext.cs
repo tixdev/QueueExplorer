@@ -4,6 +4,7 @@ namespace DynaQueueExplorer.RabbitMq.Management;
 
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.SnakeCaseLower)]
 [JsonSerializable(typeof(RmqOverview))]
+[JsonSerializable(typeof(RmqWhoAmI))]
 [JsonSerializable(typeof(List<RmqNode>))]
 [JsonSerializable(typeof(List<RmqVhost>))]
 [JsonSerializable(typeof(List<RmqQueue>))]

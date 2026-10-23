@@ -5,7 +5,8 @@ using DynaQueueExplorer.RabbitMq.Management;
 
 namespace DynaQueueExplorer.Api.Endpoints;
 
-public sealed record SnapshotInfo(DateTimeOffset FetchedAt, int FetchMs, DateTimeOffset? LastErrorAt, string? LastError);
+/// <param name="Limitations">What the RabbitMQ service account is not allowed to see on this cluster.</param>
+public sealed record SnapshotInfo(DateTimeOffset FetchedAt, int FetchMs, DateTimeOffset? LastErrorAt, string? LastError, IReadOnlyList<string> Limitations);
 
 public sealed record OverviewResponse(SnapshotInfo Snapshot, RmqOverview? Overview, IReadOnlyList<RmqNode>? Nodes);
 

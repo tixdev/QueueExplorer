@@ -265,6 +265,25 @@ in `appsettings.Local.json` replaces the `local` development cluster, one at ind
 | `RabbitMq:BrowseTruncateBytes` | payloads larger than this are truncated when browsing (256 KB) |
 | `LocalUsers[]` | test-phase users (`Username`, `Password`, `DisplayName`, `Groups`) |
 
+### RabbitMQ service account
+
+The explorer works with a non-administrator account too: whatever the account may not read is reported in the
+overview ("Limited visibility", with the missing tag) and the rest keeps working. Verified on RabbitMQ 4.1:
+
+| capability | needs |
+|---|---|
+| queues, exchanges, bindings, depths, browse, export, failure analysis | `management` tag + **read** permission on the vhosts |
+| consumer counts, stopped endpoints, connection totals | `monitoring` tag (with `management` only, RabbitMQ lists just the account's own consumers/connections) |
+| node resources, shovel status | `monitoring` tag |
+| shovel definitions | `policymaker` or `administrator` tag |
+| move, copy, retry, publish from staging | **write** permission on the destination vhost |
+| delete messages, purge | **read** permission — in RabbitMQ, read is enough to consume, delete and purge, so a "read-only" account can remove messages; the explorer's RBAC is what guards these actions |
+
+Recommended for production: `monitoring` tag with `read` (and `write` where messages are moved/republished) on the
+vhosts the explorer should cover; `policymaker` only if shovel definitions must be visible. When RabbitMQ refuses an
+operation to the account, the API answers *502 RabbitMQ refused the service account* with RabbitMQ's reason, and
+messages involved stay where they were.
+
 ### Test users (Development only, `appsettings.Development.json`)
 
 | user      | password  | access |

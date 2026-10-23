@@ -11,6 +11,9 @@ public sealed class RabbitMqApiException(string message, HttpStatusCode? statusC
     : Exception(message, inner)
 {
     public HttpStatusCode? StatusCode { get; } = statusCode;
+
+    /// <summary>RabbitMQ refused the request to the service account (missing user tag or vhost permission).</summary>
+    public bool IsAccessDenied => StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden;
 }
 
 /// <summary>
@@ -34,6 +37,8 @@ public sealed class RabbitMqManagementClient(HttpClient http, ClusterOptions clu
     public Task<RmqOverview> GetOverviewAsync(CancellationToken ct, PayloadFingerprint? fingerprint = null) =>
         GetAsync("api/overview?columns=cluster_name,rabbitmq_version,erlang_version,product_name,product_version,queue_totals,object_totals,message_stats",
             RmqJsonContext.Default.RmqOverview, ct, fingerprint);
+
+    public Task<RmqWhoAmI> GetWhoAmIAsync(CancellationToken ct) => GetAsync("api/whoami", RmqJsonContext.Default.RmqWhoAmI, ct);
 
     public Task<List<RmqNode>> GetNodesAsync(CancellationToken ct, PayloadFingerprint? fingerprint = null) =>
         GetAsync("api/nodes?columns=name,type,running,uptime,processors,mem_used,mem_limit,mem_alarm,disk_free,disk_free_limit,disk_free_alarm,fd_used,fd_total,sockets_used,sockets_total,proc_used,proc_total,run_queue",

@@ -1,6 +1,6 @@
 import { ChangeDetectionStrategy, Component, input } from '@angular/core';
 
-export type Status = 'good' | 'warning' | 'serious' | 'critical';
+export type Status = 'good' | 'warning' | 'serious' | 'critical' | 'info';
 
 /** Status is never carried by color alone: each level has its own shape, and callers always add a text label. */
 @Component({
@@ -12,6 +12,10 @@ export type Status = 'good' | 'warning' | 'serious' | 'critical';
         @case ('good') {
           <circle cx="8" cy="8" r="7" />
           <path d="M4.8 8.2l2.1 2.1 4.3-4.6" class="status-glyph" />
+        }
+        @case ('info') {
+          <circle cx="8" cy="8" r="7" />
+          <path d="M8 7.2v4.2M8 4.6v.2" class="status-glyph" />
         }
         @case ('warning') {
           <path d="M8 1.5l6.8 12H1.2z" />

@@ -141,3 +141,10 @@ public sealed record RmqGetMessage(
 public sealed record RmqPage<T>(List<T> Items, int? FilteredCount = null);
 
 public sealed record RmqQueueDepth(string Name, string Vhost, long? Messages = null);
+
+/// <summary>The management API's view of the service account; its tags decide what it can see.</summary>
+public sealed record RmqWhoAmI(string Name, List<string>? Tags = null)
+{
+    /// <summary>Without monitoring/administrator, RabbitMQ only lists the account's own consumers and connections.</summary>
+    public bool SeesEveryConsumer => Tags is not null && (Tags.Contains("monitoring") || Tags.Contains("administrator"));
+}

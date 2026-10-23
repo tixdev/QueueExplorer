@@ -123,6 +123,34 @@ public sealed class ClusterSnapshotServiceTests : IDisposable
         await _service.StopAsync(CancellationToken.None);
     }
 
+    [Fact]
+    public async Task A_limited_service_account_still_gets_a_snapshot_and_its_limitations()
+    {
+        _api.LimitedAccount = true;
+
+        var snapshot = await _service.RefreshAsync("c", CancellationToken.None);
+
+        Assert.Single(snapshot.Queues);
+        Assert.Empty(snapshot.Nodes);
+        Assert.Empty(snapshot.ShovelStatuses);
+        Assert.Empty(snapshot.ShovelDefinitions);
+        Assert.False(snapshot.ConsumersKnown);
+        Assert.Null(snapshot.Queues[0].Consumers);
+        Assert.Contains(snapshot.Limitations, l => l.StartsWith("Node resources"));
+        Assert.Contains(snapshot.Limitations, l => l.StartsWith("Shovel definitions"));
+        Assert.Contains(snapshot.Limitations, l => l.StartsWith("Consumer counts"));
+    }
+
+    [Fact]
+    public async Task A_full_service_account_has_no_limitations()
+    {
+        var snapshot = await _service.RefreshAsync("c", CancellationToken.None);
+
+        Assert.Empty(snapshot.Limitations);
+        Assert.True(snapshot.ConsumersKnown);
+        Assert.Equal(1, snapshot.Queues[0].Consumers);
+    }
+
     private async Task AdvanceAsync(TimeSpan by)
     {
         _time.Advance(by);
@@ -157,6 +185,9 @@ public sealed class ClusterSnapshotServiceTests : IDisposable
         private readonly ConcurrentDictionary<string, int> _calls = new();
 
         public int QueueDepth { get; set; } = 3;
+
+        /// <summary>Simulates a service account without the monitoring/policymaker tags.</summary>
+        public bool LimitedAccount { get; set; }
         public string BindingKey { get; set; } = "rk";
 
         public int Calls(string path) => _calls.GetValueOrDefault(path);
@@ -167,13 +198,16 @@ public sealed class ClusterSnapshotServiceTests : IDisposable
         {
             var path = request.RequestUri!.AbsolutePath.TrimStart('/');
             _calls.AddOrUpdate(path, 1, (_, n) => n + 1);
+            if (LimitedAccount && path is "api/nodes" or "api/shovels" or "api/parameters/shovel")
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.Unauthorized) { Content = new StringContent("""{"error":"not_authorised"}""") });
             var json = path switch
             {
+                "api/whoami" => LimitedAccount ? """{"name":"svc","tags":["management"]}""" : """{"name":"svc","tags":["administrator"]}""",
                 "api/overview" => """{"cluster_name":"c"}""",
                 "api/nodes" => """[{"name":"n1","running":true}]""",
                 "api/vhosts" => """[{"name":"/"}]""",
                 "api/queues" => $$"""[{"name":"q","vhost":"/","type":"quorum","messages":{{QueueDepth}}}]""",
-                "api/consumers" => "[]",
+                "api/consumers" => """[{"queue":{"name":"q","vhost":"/"}}]""",
                 "api/exchanges" => """[{"name":"x","vhost":"/","type":"fanout"}]""",
                 "api/bindings" => $$"""[{"source":"x","vhost":"/","destination":"q","destination_type":"queue","routing_key":"{{BindingKey}}"}]""",
                 "api/shovels" or "api/parameters/shovel" => "[]",

@@ -215,7 +215,7 @@ public static class ClusterEndpoints
     private static SnapshotInfo Info(ClusterSnapshotService snapshots, ClusterSnapshot snapshot)
     {
         var health = snapshots.GetHealth(snapshot.Cluster);
-        return new SnapshotInfo(snapshot.FetchedAt, (int)snapshot.FetchDuration.TotalMilliseconds, health.LastErrorAt, health.LastError);
+        return new SnapshotInfo(snapshot.FetchedAt, (int)snapshot.FetchDuration.TotalMilliseconds, health.LastErrorAt, health.LastError, snapshot.Limitations);
     }
 
     /// <summary>Hides the existence of clusters the user has no access to at all.</summary>
