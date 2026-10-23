@@ -1,0 +1,44 @@
+<div class="list-page">
+  <div class="toolbar">
+    <select (change)="vhost.set($any($event.target).value)">
+      <option value="" [selected]="!vhost()">All vhosts</option>
+      @for (v of vhosts(); track v) {
+        <option [value]="v" [selected]="v === vhost()">{{ v }}</option>
+      }
+    </select>
+    <input class="search" type="search" placeholder="Search queues…" [value]="search()" (input)="search.set($any($event.target).value)" />
+    <label class="check"><input type="checkbox" [checked]="hideInfrastructure()" (change)="hideInfrastructure.set($any($event.target).checked)" /> Hide NServiceBus infrastructure</label>
+    <label class="check"><input type="checkbox" [checked]="onlyWithMessages()" (change)="onlyWithMessages.set($any($event.target).checked)" /> Only with messages</label>
+    <span class="spacer"></span>
+    <span class="muted">{{ totals().count | num }} queues · {{ totals().messages | num }} messages</span>
+  </div>
+
+  <div class="table queues-table">
+    <div class="thead row">
+      <button class="th sortable" [class.sorted]="sort() === 'name'" (click)="sort.set('name')">Queue</button>
+      <span class="th">Type</span>
+      <button class="th num sortable" [class.sorted]="sort() === 'messages'" (click)="sort.set('messages')">Messages</button>
+      <span class="th num">Ready</span>
+      <span class="th num">Unacked</span>
+      <button class="th num sortable" [class.sorted]="sort() === 'consumers'" (click)="sort.set('consumers')">Consumers</button>
+      <span class="th">State</span>
+    </div>
+    @if (store.loading()) {
+      <p class="muted pad">Loading topology…</p>
+    }
+    <cdk-virtual-scroll-viewport itemSize="34" class="viewport">
+      <a *cdkVirtualFor="let q of queues(); trackBy: trackQueue" class="row" [routerLink]="['/c', store.cluster(), 'queues', q.vhost, q.name]">
+        <span class="cell name">
+          @if (!vhost()) { <span class="vhost">{{ q.vhost }}</span> }
+          <span class="mono" [class.error-queue]="isErrorQueue(q)">{{ q.name }}</span>
+        </span>
+        <span class="cell"><span class="badge muted">{{ q.type }}</span></span>
+        <span class="cell num" [class.hot]="(q.messages ?? 0) > 0 && isErrorQueue(q)">{{ q.messages | num }}</span>
+        <span class="cell num">{{ q.ready | num }}</span>
+        <span class="cell num">{{ q.unacked | num }}</span>
+        <span class="cell num" [class.warn-text]="q.consumers === 0 && !isErrorQueue(q) && q.name !== 'audit'">{{ q.consumers | num }}</span>
+        <span class="cell">{{ q.state }}</span>
+      </a>
+    </cdk-virtual-scroll-viewport>
+  </div>
+</div>

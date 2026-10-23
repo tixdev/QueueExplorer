@@ -1,0 +1,43 @@
+# Local environment for development and performance tests.
+#   tools/perf-env/generate_certs.sh                    # local CA + server certificate for TLS (once)
+#   python3 -I tools/perf-env/generate_definitions.py   # (re)generate the RabbitMQ topology
+#   docker compose up -d
+#   python3 -I tools/perf-env/seed_messages.py          # NServiceBus-shaped sample messages
+name: dynaqueueexplorer
+
+services:
+  rabbitmq:
+    image: rabbitmq:4.1-management
+    hostname: rabbit-1
+    ports:
+      - "5671:5671"     # AMQPS (used by the explorer)
+      - "15671:15671"   # management over HTTPS (used by the explorer)
+      - "5672:5672"     # AMQP, local tools only
+      - "15672:15672"   # management over HTTP, local tools only
+    volumes:
+      - ./docker/rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+      - ./docker/rabbitmq/enabled_plugins:/etc/rabbitmq/enabled_plugins:ro
+      - ./docker/rabbitmq/definitions.json:/etc/rabbitmq/definitions.json:ro
+      - ./docker/rabbitmq/certs:/etc/rabbitmq/certs:ro
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
+      interval: 5s
+      timeout: 10s
+      retries: 30
+
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    platform: linux/amd64
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "Dqe_Local_Dev_2026!"
+      MSSQL_PID: Developer
+    ports:
+      - "14333:1433"
+    volumes:
+      - sqlserver-data:/var/opt/mssql
+
+volumes:
+  rabbitmq-data:
+  sqlserver-data:

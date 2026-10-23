@@ -1,0 +1,38 @@
+<div class="list-page">
+  <div class="toolbar">
+    <input class="search" type="search" placeholder="Search shovels, queues, vhosts…" [value]="search()" (input)="search.set($any($event.target).value)" />
+    <label class="check"><input type="checkbox" [checked]="onlyProblems()" (change)="onlyProblems.set($any($event.target).checked)" /> Only not running</label>
+    <span class="spacer"></span>
+    @if (problems()) { <span class="badge danger">{{ problems() }} not running</span> }
+    <span class="muted">{{ shovels().length }} shovel</span>
+  </div>
+  @if (error(); as e) { <div class="banner error">{{ e }}</div> }
+  @if (!loaded() && !error()) { <p class="muted">Loading…</p> }
+
+  <table class="grid">
+    <thead><tr><th>State</th><th>Vhost</th><th>Name</th><th>Source</th><th>Destination</th><th>Node</th></tr></thead>
+    <tbody>
+      @for (s of shovels(); track key(s)) {
+        <tr class="clickable" (click)="expanded.set(expanded() === key(s) ? null : key(s))">
+          <td><span [class]="'badge ' + stateClass(s.state)">{{ s.state }}</span></td>
+          <td>{{ s.vhost ?? '(static)' }}</td>
+          <td class="mono">{{ s.name }}</td>
+          <td class="mono">{{ s.source }}<div class="muted small">{{ s.sourceUri }}</div></td>
+          <td class="mono">{{ s.destination }}<div class="muted small">{{ s.destinationUri ?? s.definition?.['dest-uri'] }}</div></td>
+          <td class="mono small">{{ s.node }}</td>
+        </tr>
+        @if (expanded() === key(s)) {
+          <tr class="expanded">
+            <td colspan="6">
+              @if (s.reason) { <p class="error mono">{{ s.reason }}</p> }
+              @if (s.state !== 'running' && !s.reason) {
+                <p class="muted">RabbitMQ reports no running state: the shovel is reconnecting or cannot connect.</p>
+              }
+              <pre class="code">{{ definition(s) }}</pre>
+            </td>
+          </tr>
+        }
+      }
+    </tbody>
+  </table>
+</div>

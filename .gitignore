@@ -1,0 +1,71 @@
+# --- .NET -------------------------------------------------------------------
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+*.user
+*.suo
+*.userprefs
+*.rsuser
+TestResults/
+coverage/
+*.coverage
+*.coveragexml
+coverage.cobertura.xml
+*.nupkg
+*.snupkg
+.dotnet-tools/
+# NServiceBus rolling file logs (simulator and any local endpoint)
+logs/
+*.log
+
+# --- Angular / Node ---------------------------------------------------------
+node_modules/
+.angular/
+dist/
+out-tsc/
+npm-debug.log*
+yarn-error.log*
+.npm/
+# SPA build output served by the API (produced by `ng build`)
+src/server/DynaQueueExplorer.Api/wwwroot/
+
+# --- Python (tools/perf-env) --------------------------------------------------
+__pycache__/
+*.py[cod]
+.venv/
+
+# --- IDEs and editors ---------------------------------------------------------
+.vs/
+.idea/
+*.sln.iml
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+.history/
+*.swp
+*~
+
+# --- OS -----------------------------------------------------------------------
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# --- Local configuration and secrets ----------------------------------------------
+# appsettings.Development.json only holds the local Docker/test setup; real credentials go in these.
+appsettings.*.local.json
+appsettings.Local.json
+*.env
+.env*
+!.env.example
+secrets.json
+
+# --- Data produced while using the explorer ---------------------------------------
+# Message exports may contain production data.
+*.mqx
+*.mq
+
+# --- Local TLS material (tools/perf-env/generate_certs.sh) ---------------------------
+docker/rabbitmq/certs/

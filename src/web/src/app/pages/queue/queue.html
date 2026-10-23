@@ -1,0 +1,145 @@
+<div class="queue-page">
+  <nav class="breadcrumb">
+    <a [routerLink]="['/c', store.cluster(), 'queues']">Queues</a> <span>›</span> <span class="vhost">{{ vhost() }}</span> <span>›</span>
+    <strong class="mono">{{ name() }}</strong>
+  </nav>
+
+  @if (queue(); as q) {
+    <section class="stats compact">
+      <div class="stat"><span class="stat-label">Messages</span><span class="stat-value">{{ q.messages | num }}</span><span class="muted">{{ q.ready | num }} ready · {{ q.unacked | num }} unacked</span></div>
+      <div class="stat"><span class="stat-label">Consumers</span><span class="stat-value">{{ q.consumers | num }}</span><span class="muted">{{ q.state }}</span></div>
+      <div class="stat"><span class="stat-label">Type</span><span class="stat-value">{{ q.type }}</span><span class="muted">{{ q.durable ? 'durable' : 'transient' }}@if (q.policy) { · policy {{ q.policy }} }</span></div>
+      @if (q.type === 'quorum') {
+        @let limit = detail()?.queue?.deliveryLimit;
+        <div class="stat">
+          <span class="stat-label">Delivery limit</span>
+          <span class="stat-value" [class.warn-text]="limit !== undefined && limit >= 0 && limit < 10000">{{ deliveryLimitLabel(limit) }}</span>
+          <span class="muted">{{ limit !== undefined && limit >= 0 && limit < 10000 ? 'browsing can dead-letter messages' : 'browsing never loses messages' }}</span>
+        </div>
+      }
+      @if (detail()?.queue?.messageStats; as s) {
+        <div class="stat"><span class="stat-label">Publish / Deliver / Ack</span><span class="stat-value">{{ (s.publishDetails?.rate ?? 0).toFixed(1) }} / {{ (s.deliverGetDetails?.rate ?? 0).toFixed(1) }} / {{ (s.ackDetails?.rate ?? 0).toFixed(1) }}</span><span class="muted">msg/s</span></div>
+      }
+    </section>
+
+    <div class="two-col">
+      <details class="card">
+        <summary>Bindings <span class="count">{{ bindings().length }}</span></summary>
+        <table class="kv">
+          @for (b of bindings(); track b.source + b.routingKey) {
+            <tr><th class="mono"><a [routerLink]="['/c', store.cluster(), 'exchanges']" [queryParams]="{ vhost: b.vhost, name: b.source }">{{ b.source }}</a></th><td class="mono">{{ b.routingKey }}</td></tr>
+          } @empty {
+            <tr><td class="muted">No bindings (default exchange only)</td></tr>
+          }
+        </table>
+      </details>
+      <details class="card">
+        <summary>Arguments <span class="count">{{ argumentEntries().length }}</span></summary>
+        <table class="kv">
+          @for (a of argumentEntries(); track a[0]) {
+            <tr><th class="mono">{{ a[0] }}</th><td class="mono">{{ a[1] | jsonValue }}</td></tr>
+          }
+        </table>
+      </details>
+    </div>
+
+    <section class="browse">
+      <div class="toolbar">
+        @if (q.canBrowse) {
+          <label>Messages <input type="number" min="1" max="200" [value]="count()" (change)="count.set(+$any($event.target).value)" class="narrow" /></label>
+          <button class="primary" (click)="browse()" [disabled]="browsing()">{{ browsing() ? 'Reading…' : 'Browse' }}</button>
+          @if (result()) {
+            <input class="search" type="search" placeholder="Filter by type, exception, id, body…" [value]="filter()" (input)="filter.set($any($event.target).value)" />
+            <span class="muted">{{ messages().length }} of {{ result()!.messages.length }} read · {{ result()!.queueDepth | num }} in queue</span>
+          }
+        } @else {
+          <span class="muted">You are not allowed to browse the messages of this queue.</span>
+        }
+      </div>
+
+      @if (confirmLimit() !== null) {
+        <div class="banner warn">
+          <p>
+            <strong>Quorum queue with a delivery-limit of {{ confirmLimit() }}.</strong> To browse it RabbitMQ takes the messages
+            and puts them back: every read increments <span class="mono">x-delivery-count</span>, and messages reaching
+            {{ confirmLimit() }} are dead-lettered or dropped. To browse safely, set the limit to <span class="mono">-1</span>
+            with a policy on this queue.
+          </p>
+          <button class="primary" (click)="browse(true)">I understand, browse anyway</button>
+          <button (click)="confirmLimit.set(null)">Cancel</button>
+        </div>
+      }
+      @if (browseError(); as e) {
+        <div class="banner error">{{ e }}</div>
+      }
+      @if (outcome(); as o) {
+        <div class="banner" [class.info]="!o.failures.length" [class.warn]="o.failures.length">
+          {{ o.text }}
+          @if (o.stagingBatch) { <a [routerLink]="['/c', store.cluster(), 'staging']" [queryParams]="{ batch: o.stagingBatch }">Open in staging</a> }
+          @if (o.failures.length) {
+            <p><strong>{{ o.failures.length }} failed</strong> (still in the source queue):</p>
+            <ul class="failures">
+              @for (f of o.failures.slice(0, 20); track $index) { <li><span class="mono">{{ f.key }}</span> — {{ f.reason }}</li> }
+            </ul>
+          }
+        </div>
+      }
+      @if (dialog(); as d) {
+        <app-destination-dialog
+          [title]="d === 'move' ? 'Move messages' : d === 'copy' ? 'Copy messages' : 'Retry failed messages'"
+          [description]="'Applies to: ' + scopeLabel() + '. A message leaves the source only once RabbitMQ has confirmed it at the destination.'"
+          [confirmLabel]="d === 'move' ? 'Move' : d === 'copy' ? 'Copy' : 'Retry'"
+          [allowRetry]="d === 'retry'"
+          [preferRetry]="d === 'retry'"
+          [retryTargets]="retryTargets()"
+          [retryTargetsNote]="retryTargetsNote()"
+          [initialVhost]="vhost()"
+          [exclude]="{ vhost: vhost(), queue: name() }"
+          (chosen)="transfer($event)"
+          (cancel)="dialog.set(null)" />
+      }
+      @if (result(); as r) {
+        @if (r.messages.length) {
+          <div class="banner info small">
+            The messages read were put back: they are now flagged <em>redelivered</em> and their order may have changed.
+            @if (r.queueType === 'quorum') { Their delivery count was incremented. }
+          </div>
+        }
+        <div class="toolbar ops">
+          <span class="muted">Actions on <strong>{{ scopeLabel() }}</strong>:</span>
+          @if (can().move && can().publish) {
+            <button (click)="dialog.set('move')" [disabled]="working()">Move…</button>
+          }
+          @if (can().publish) {
+            <button (click)="dialog.set('copy')" [disabled]="working()">Copy…</button>
+          }
+          @if (hasFailedMessages() && can().move && can().publish) {
+            <button (click)="dialog.set('retry')" [disabled]="working()" title="Send failed messages back to their failed queue">Retry…</button>
+          }
+          @if (can().export) {
+            <button (click)="exportFile()" [disabled]="working()">Save to file</button>
+          }
+          @if (can().stage) {
+            <button (click)="stage(false)" [disabled]="working()" title="Copy to staging, leaving the messages in the queue">Copy to staging</button>
+            @if (can().move) {
+              <button (click)="stage(true)" [disabled]="working()" title="Move to staging, removing the messages from the queue">Move to staging</button>
+            }
+          }
+          @if (working()) { <span class="muted">Working…</span> }
+        </div>
+        <div class="messages-split">
+          <app-message-list [messages]="messages()" [(selectedKeys)]="selectedKeys" [(current)]="selected" />
+          <div class="message-detail">
+            @if (selected(); as m) {
+              <app-message-view [message]="m" />
+            }
+          </div>
+        </div>
+      }
+    </section>
+  } @else if (store.topology()) {
+    <p class="muted">Queue not found or not visible.</p>
+  } @else {
+    <p class="muted">Loading…</p>
+  }
+</div>

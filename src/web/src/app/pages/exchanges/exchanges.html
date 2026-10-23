@@ -1,0 +1,69 @@
+<div class="list-page">
+  <div class="toolbar">
+    <select (change)="vhost.set($any($event.target).value)">
+      <option value="" [selected]="!vhost()">All vhosts</option>
+      @for (v of vhosts(); track v) {
+        <option [value]="v" [selected]="v === vhost()">{{ v }}</option>
+      }
+    </select>
+    <input class="search" type="search" placeholder="Search exchanges…" [value]="search()" (input)="search.set($any($event.target).value)" />
+    <label class="check"><input type="checkbox" [checked]="hideInfrastructure()" (change)="hideInfrastructure.set($any($event.target).checked)" /> Hide amq.* and NServiceBus infrastructure</label>
+    <span class="spacer"></span>
+    <span class="muted">{{ exchanges().length | num }} exchange</span>
+  </div>
+
+  <div class="split">
+    <div class="table exchanges-table">
+      <div class="thead row"><span class="th">Exchange</span><span class="th">Type</span><span class="th num">Bindings</span></div>
+      <cdk-virtual-scroll-viewport itemSize="34" class="viewport">
+        <button *cdkVirtualFor="let e of exchanges(); trackBy: track" class="row" [class.selected]="selected()?.vhost === e.vhost && selected()?.name === e.name" (click)="select(e)">
+          <span class="cell name">
+            @if (!vhost()) { <span class="vhost">{{ e.vhost }}</span> }
+            <span class="mono">{{ displayName(e.name) }}</span>
+          </span>
+          <span class="cell"><span class="badge muted">{{ e.type }}</span></span>
+          <span class="cell num">{{ store.bindingsFrom(e.vhost, e.name).length }}</span>
+        </button>
+      </cdk-virtual-scroll-viewport>
+    </div>
+
+    <aside class="card side">
+      @if (current(); as e) {
+        <h3 class="mono">{{ displayName(e.name) }}</h3>
+        <p class="muted">{{ e.vhost }} · {{ e.type }} · {{ e.durable ? 'durable' : 'transient' }}{{ e.internal ? ' · internal' : '' }}</p>
+
+        <h4>To <span class="count">{{ outgoing().length }}</span></h4>
+        <table class="kv">
+          @for (b of outgoing(); track b.destinationType + b.destination + b.routingKey) {
+            <tr>
+              <th>
+                @if (b.destinationType === 'queue') {
+                  <a class="mono" [routerLink]="['/c', store.cluster(), 'queues', b.vhost, b.destination]">⇢ {{ b.destination }}</a>
+                } @else {
+                  <button class="link mono" (click)="selected.set({ vhost: b.vhost, name: b.destination })">⇉ {{ b.destination }}</button>
+                }
+              </th>
+              <td class="mono">{{ b.routingKey }}</td>
+            </tr>
+          } @empty {
+            <tr><td class="muted">No outgoing bindings</td></tr>
+          }
+        </table>
+
+        <h4>From <span class="count">{{ incoming().length }}</span></h4>
+        <table class="kv">
+          @for (b of incoming(); track b.source + b.routingKey) {
+            <tr>
+              <th><button class="link mono" (click)="selected.set({ vhost: b.vhost, name: b.source })">⇇ {{ b.source }}</button></th>
+              <td class="mono">{{ b.routingKey }}</td>
+            </tr>
+          } @empty {
+            <tr><td class="muted">No exchanges bound to this one</td></tr>
+          }
+        </table>
+      } @else {
+        <p class="muted">Select an exchange to see its bindings.</p>
+      }
+    </aside>
+  </div>
+</div>

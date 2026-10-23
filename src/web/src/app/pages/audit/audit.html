@@ -1,0 +1,28 @@
+<div class="list-page">
+  <div class="toolbar">
+    <h2>Audit log</h2>
+    <span class="spacer"></span>
+    <button class="small" (click)="reload()">Refresh</button>
+  </div>
+  @if (error(); as e) { <div class="banner error">{{ e }}</div> }
+  <table class="grid">
+    <thead><tr><th>When</th><th>User</th><th>Action</th><th>Outcome</th><th>Cluster</th><th>Vhost</th><th>Resource</th><th>Details</th></tr></thead>
+    <tbody>
+      @for (a of entries(); track a.id) {
+        <tr>
+          <td class="nowrap">{{ a.timestamp | datetime }}</td>
+          <td>{{ a.user }}</td>
+          <td class="mono">{{ a.action }}</td>
+          <td><span [class]="'badge ' + (a.outcome === 'success' ? 'ok' : 'danger')">{{ a.outcome }}</span></td>
+          <td>{{ a.cluster }}</td>
+          <td>{{ a.vhost }}</td>
+          <td class="mono">{{ a.resource }}</td>
+          <td class="muted">{{ a.details }}</td>
+        </tr>
+      }
+    </tbody>
+  </table>
+  @if (!done()) {
+    <button (click)="load()" [disabled]="loading()">{{ loading() ? 'Loading…' : 'Load more' }}</button>
+  }
+</div>

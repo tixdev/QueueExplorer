@@ -1,0 +1,177 @@
+@let m = message();
+<div class="message-view">
+  <nav class="tabs">
+    @if (nsb()) {
+      <button [class.active]="tab() === 'nsb'" (click)="selectTab('nsb')">NServiceBus</button>
+    }
+    <button [class.active]="tab() === 'body'" (click)="selectTab('body')">Body</button>
+    <button [class.active]="tab() === 'headers'" (click)="selectTab('headers')">
+      Header <span class="count">{{ headerEntries().length }}</span>
+    </button>
+    <button [class.active]="tab() === 'properties'" (click)="selectTab('properties')">Properties</button>
+  </nav>
+
+  @switch (tab()) {
+    @case ('nsb') {
+      @let n = nsb()!;
+      <section class="nsb">
+        <header class="nsb-title">
+          <span class="badge" [class.danger]="n.kind === 'failedMessage'">{{ kindLabel() }}</span>
+          @if (n.intent) {
+            <span class="badge muted">{{ n.intent }}</span>
+          }
+          @for (t of n.messageTypes; track t.fullName; let first = $first) {
+            <span [class]="first ? 'type-name' : 'type-name secondary'" [title]="t.fullName + (t.assembly ? ', ' + t.assembly : '')">
+              {{ t.name }}
+            </span>
+          }
+        </header>
+        @if (n.messageTypes[0]; as t) {
+          <div class="type-meta">{{ t.namespace }} · {{ t.assembly }} @if (t.version) { · v{{ t.version }} }</div>
+        }
+
+        @if (n.failure; as f) {
+          <div class="failure">
+            <div class="failure-head">
+              <strong>{{ f.exceptionType }}</strong>
+              @if (f.timeOfFailure) {
+                <span title="{{ f.timeOfFailure | datetime }}">failed {{ f.timeOfFailure | relative }}</span>
+              }
+            </div>
+            <p class="failure-message">{{ f.message }}</p>
+            <dl class="grid-dl">
+              @if (f.handler) {
+                <dt>Handler</dt><dd class="mono" [title]="f.handler">{{ shortType(f.handler) }}</dd>
+              }
+              <dt>Failed queue</dt><dd class="mono">{{ f.failedQueue ?? '–' }}</dd>
+              <dt>Endpoint</dt><dd class="mono">{{ f.processingEndpoint ?? '–' }} @if (f.processingMachine) { <span class="muted">on {{ f.processingMachine }}</span> }</dd>
+              @if (f.innerExceptionType) {
+                <dt>Inner exception</dt><dd class="mono">{{ f.innerExceptionType }}</dd>
+              }
+              <dt>Delayed retries</dt>
+              <dd>
+                @if (f.delayedRetries !== undefined && f.delayedRetries !== null) {
+                  {{ f.delayedRetries }} so far
+                } @else if (f.lastDelayedRetryAt) {
+                  done, the last one <span [title]="f.lastDelayedRetryAt | datetime">{{ f.lastDelayedRetryAt | relative }}</span>
+                } @else {
+                  none
+                }
+              </dd>
+            </dl>
+            @if (failureData().length) {
+              <h4>Exception data</h4>
+              <table class="kv">
+                @for (d of failureData(); track d[0]) {
+                  <tr><th>{{ d[0] }}</th><td class="mono">{{ d[1] }}</td></tr>
+                }
+              </table>
+            }
+            @if (f.stackTrace) {
+              <button class="link" (click)="showStack.set(!showStack())">
+                {{ showStack() ? 'Hide' : 'Show' }} stack trace
+              </button>
+              @if (showStack()) {
+                <pre class="code stack">{{ f.stackTrace }}</pre>
+              }
+            }
+          </div>
+        }
+
+        <dl class="grid-dl">
+          <dt>Sent</dt>
+          <dd>
+            @if (n.timeSent) {
+              {{ n.timeSent | datetime }} <span class="muted">({{ n.timeSent | relative }})</span>
+            } @else { – }
+          </dd>
+          <dt>From</dt>
+          <dd class="mono">
+            {{ n.originatingEndpoint ?? '–' }}
+            @if (n.originatingMachine) { <span class="muted">on {{ n.originatingMachine }}</span> }
+          </dd>
+          @if (n.replyToAddress) {
+            <dt>Reply to</dt><dd class="mono">{{ n.replyToAddress }}</dd>
+          }
+          @if (n.deliverAt && !n.failure) {
+            <dt>Deliver at</dt><dd>{{ n.deliverAt | datetime }}</dd>
+          }
+          @if (n.timeToBeReceived) {
+            <dt>TTBR</dt><dd>{{ n.timeToBeReceived }}</dd>
+          }
+          <dt>Message ID</dt>
+          <dd class="mono copyable" (click)="copy('id', n.messageId)">{{ n.messageId ?? '–' }} @if (copied() === 'id') { <span class="ok">copied</span> }</dd>
+          <dt>Conversation</dt>
+          <dd class="mono copyable" (click)="copy('conv', n.conversationId)">{{ n.conversationId ?? '–' }} @if (copied() === 'conv') { <span class="ok">copied</span> }</dd>
+          @if (n.correlationId && n.correlationId !== n.messageId) {
+            <dt>Correlation</dt><dd class="mono">{{ n.correlationId }}</dd>
+          }
+          @if (n.relatedTo) {
+            <dt>Related to</dt><dd class="mono">{{ n.relatedTo }}</dd>
+          }
+          <dt>Content type</dt><dd>{{ n.contentType ?? '–' }}</dd>
+          <dt>NServiceBus</dt><dd>{{ n.nServiceBusVersion ?? '–' }}</dd>
+        </dl>
+
+        @if (n.saga; as s) {
+          <h4>Saga</h4>
+          <dl class="grid-dl">
+            @if (s.sagaType) { <dt>Type</dt><dd class="mono">{{ s.sagaType }}</dd> }
+            @if (s.sagaId) { <dt>Saga id</dt><dd class="mono">{{ s.sagaId }}</dd> }
+            @if (s.originatingSagaType) { <dt>Originating saga</dt><dd class="mono">{{ s.originatingSagaType }}</dd> }
+            @if (s.originatingSagaId) { <dt>Originating saga id</dt><dd class="mono">{{ s.originatingSagaId }}</dd> }
+          </dl>
+        }
+
+        @for (g of n.headerGroups; track g.name) {
+          <details class="header-group" [open]="g.name === 'NServiceBus'">
+            <summary>{{ g.name }} <span class="count">{{ g.headers.length }}</span></summary>
+            <table class="kv">
+              @for (h of g.headers; track h.key) {
+                <tr><th [title]="h.key">{{ h.label }}</th><td class="mono">{{ h.value }}</td></tr>
+              }
+            </table>
+          </details>
+        }
+      </section>
+    }
+    @case ('body') {
+      <section>
+        <div class="body-toolbar">
+          <span class="badge muted">{{ m.body.format.toUpperCase() }}</span>
+          <span class="muted">{{ m.payloadBytes | bytes }}</span>
+          @if (m.contentType) { <span class="muted">{{ m.contentType }}</span> }
+          @if (m.body.truncated) { <span class="badge warn">truncated</span> }
+          <span class="spacer"></span>
+          <button class="small" (click)="copy('body', m.body.text ?? m.body.base64)">
+            {{ copied() === 'body' ? 'Copied' : 'Copy' }}
+          </button>
+        </div>
+        @if (m.body.format === 'binary') {
+          <pre class="code">{{ hexPreview() }}</pre>
+        } @else {
+          <pre class="code">{{ m.body.text }}</pre>
+        }
+      </section>
+    }
+    @case ('headers') {
+      <table class="kv">
+        @for (h of headerEntries(); track h[0]) {
+          <tr><th>{{ h[0] }}</th><td class="mono">{{ h[1] | jsonValue }}</td></tr>
+        } @empty {
+          <tr><td class="muted">No headers</td></tr>
+        }
+      </table>
+    }
+    @case ('properties') {
+      <table class="kv">
+        <tr><th>exchange</th><td class="mono">{{ m.exchange || '(default)' }}</td></tr>
+        <tr><th>routing key</th><td class="mono">{{ m.routingKey }}</td></tr>
+        <tr><th>redelivered</th><td>{{ m.redelivered ? 'yes' : 'no' }}</td></tr>
+        @for (p of propertyEntries(); track p[0]) {
+          <tr><th>{{ p[0] }}</th><td class="mono">{{ p[1] | jsonValue }}</td></tr>
+        }
+      </table>
+    }
+  }
+</div>

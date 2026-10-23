@@ -1,0 +1,106 @@
+<div class="staging-page">
+  <div class="toolbar">
+    <h2>Staging</h2>
+    <span class="muted">Messages imported from files or taken from queues, to inspect and edit before deciding where to publish them.</span>
+    <span class="spacer"></span>
+    @if (canWrite()) {
+      <label class="button-like">
+        Import .mqx file
+        <input type="file" accept=".mqx" hidden (change)="import($any($event.target))" />
+      </label>
+    }
+  </div>
+  @if (error(); as e) { <div class="banner error">{{ e }}</div> }
+  @if (outcome(); as o) {
+    <div class="banner" [class.info]="!o.failures.length" [class.warn]="o.failures.length">
+      {{ o.text }}
+      @if (o.failures.length) {
+        <p><strong>{{ o.failures.length }} failed:</strong></p>
+        <ul class="failures">
+          @for (f of o.failures.slice(0, 20); track $index) { <li><span class="mono">{{ f.key }}</span> — {{ f.reason }}</li> }
+        </ul>
+      }
+    </div>
+  }
+
+  <div class="staging-split">
+    <aside class="card batches">
+      <div class="broker-filter">
+        <button class="small" [class.active]="!broker()" (click)="broker.set('')">All</button>
+        @for (b of brokers; track b.id) {
+          <button class="small" [class.active]="broker() === b.id" (click)="broker.set(b.id)">
+            {{ b.label }} <span class="count">{{ brokerCounts().get(b.id) ?? 0 }}</span>
+          </button>
+        }
+      </div>
+      @for (b of batches(); track b.id) {
+        <button class="batch" [class.selected]="b.id === batchId()" (click)="open(b)">
+          <span><span class="badge muted">{{ brokerLabel(b.broker) }}</span> <strong>{{ b.name }}</strong></span>
+          <span class="muted small">{{ b.origin }}</span>
+          <span class="muted small">{{ b.createdAt | datetime }} · {{ b.createdBy }}</span>
+          <span class="small">
+            {{ b.messages }} messages
+            @if (b.discarded) { · {{ b.discarded }} discarded }
+            @if (b.published) { · <span class="ok">{{ b.published }} published</span> }
+          </span>
+        </button>
+      } @empty {
+        <p class="muted">No batches{{ broker() ? ' for ' + brokerLabel(broker()) : '' }}. Import a .mqx file or use “Copy/Move to staging” on a queue page.</p>
+      }
+    </aside>
+
+    <section class="batch-detail">
+      @if (detail(); as d) {
+        <div class="toolbar ops">
+          <span class="badge muted">{{ brokerLabel(d.batch.broker) }}</span>
+          <strong>{{ d.batch.name }}</strong>
+          <span class="muted">Actions on <strong>{{ scopeLabel() }}</strong>:</span>
+          @if (canPublish() && isRabbit()) {
+            <button class="primary" (click)="publishing.set(true)" [disabled]="working()">Publish…</button>
+          }
+          <button (click)="exportBatch()" [disabled]="working()">Export .mqx</button>
+          @if (canWrite()) {
+            <button (click)="discard(true)" [disabled]="working() || !selectedKeys().size">Discard</button>
+            <button (click)="discard(false)" [disabled]="working() || !selectedKeys().size">Restore</button>
+            <button (click)="deleteBatch()" [disabled]="working()">Delete batch</button>
+          }
+          <label class="check"><input type="checkbox" [checked]="showDiscarded()" (change)="showDiscarded.set($any($event.target).checked)" /> Show discarded</label>
+        </div>
+        <div class="messages-split">
+          <app-message-list [messages]="messages()" [(selectedKeys)]="selectedKeys" [current]="current()" (currentChange)="select($event)" />
+          <div class="message-detail">
+            @if (current(); as m) {
+              @if (editing()) {
+                <app-message-editor [message]="m" [batchId]="d.batch.id" (saved)="edited($event)" (cancel)="editing.set(false)" />
+              } @else {
+                <div class="body-toolbar">
+                  @if (m.editedAt) { <span class="badge warn">edited by {{ m.editedBy }} · {{ m.editedAt | datetime }}</span> }
+                  @if (m.lastPublishedTo) { <span class="badge ok" [title]="m.lastPublishedAt | datetime">published to {{ m.lastPublishedTo }}</span> }
+                  <span class="spacer"></span>
+                  @if (canWrite() && isRabbit()) {
+                    <button class="small" (click)="editing.set(true)">Edit</button>
+                  }
+                </div>
+                <app-message-view [message]="m" />
+              }
+            }
+          </div>
+        </div>
+      } @else {
+        <p class="muted pad">Select a batch.</p>
+      }
+    </section>
+  </div>
+
+  @if (publishing()) {
+    <app-destination-dialog
+      title="Publish from staging"
+      [description]="'Applies to: ' + scopeLabel() + ', on cluster ' + store.cluster() + '. The messages stay in staging.'"
+      confirmLabel="Publish"
+      [allowRetry]="hasFailedMessages()"
+      [retryTargets]="retryTargets()"
+      [initialVhost]="detail()?.batch?.originVhost ?? ''"
+      (chosen)="publish($event)"
+      (cancel)="publishing.set(false)" />
+  }
+</div>

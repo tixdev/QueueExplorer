@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <ItemGroup>
+    <ProjectReference Include="..\DynaQueueExplorer.Core\DynaQueueExplorer.Core.csproj" />
+    <ProjectReference Include="..\DynaQueueExplorer.RabbitMq\DynaQueueExplorer.RabbitMq.csproj" />
+    <ProjectReference Include="..\DynaQueueExplorer.NServiceBus\DynaQueueExplorer.NServiceBus.csproj" />
+    <ProjectReference Include="..\DynaQueueExplorer.Infrastructure\DynaQueueExplorer.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="System.IO.Hashing" />
+  </ItemGroup>
+
+</Project>

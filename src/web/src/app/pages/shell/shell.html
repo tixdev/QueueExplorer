@@ -1,0 +1,51 @@
+<div class="shell">
+  <header class="topbar">
+    <a class="brand" routerLink="/"><img src="favicon.svg" alt="" width="22" height="22" /> DynaQueueExplorer</a>
+    @if (me(); as user) {
+      @if (user.clusters.length > 1) {
+        <select class="cluster-select" (change)="switchCluster($any($event.target).value)">
+          @for (c of user.clusters; track c.name) {
+            <option [value]="c.name" [selected]="c.name === cluster()">{{ c.name }}</option>
+          }
+        </select>
+      } @else {
+        <span class="cluster-name">{{ cluster() }}</span>
+      }
+      <nav class="nav">
+        @if (can(A.overviewRead) || can(A.nodesRead)) {
+          <a [routerLink]="['/c', cluster(), 'overview']" routerLinkActive="active">Overview</a>
+        }
+        @if (can(A.queuesRead)) {
+          <a [routerLink]="['/c', cluster(), 'queues']" routerLinkActive="active">Queues</a>
+        }
+        @if (can(A.exchangesRead)) {
+          <a [routerLink]="['/c', cluster(), 'exchanges']" routerLinkActive="active">Exchanges</a>
+        }
+        @if (can(A.shovelsRead)) {
+          <a [routerLink]="['/c', cluster(), 'shovels']" routerLinkActive="active">Shovels</a>
+        }
+        @if (canStaging()) {
+          <a [routerLink]="['/c', cluster(), 'staging']" routerLinkActive="active">Staging</a>
+        }
+        @if (canAudit()) {
+          <a [routerLink]="['/c', cluster(), 'audit']" routerLinkActive="active">Audit</a>
+        }
+      </nav>
+      <span class="spacer"></span>
+      @if (store.topology(); as t) {
+        <span class="snapshot" [class.stale]="t.snapshot.lastError" [title]="t.snapshot.lastError ?? 'Snapshot read in ' + t.snapshot.fetchMs + ' ms'">
+          {{ t.snapshot.lastError ? 'Refresh failed · ' : '' }}checked {{ checkedAtIso() | relative: now() }}
+        </span>
+      }
+      <button class="small" (click)="refresh()" title="Refresh now">↻</button>
+      <span class="user" [title]="user.groups.join(', ')">{{ user.displayName }}</span>
+      <button class="small" (click)="logout()">Sign out</button>
+    }
+  </header>
+  @if (store.error(); as e) {
+    <div class="banner error">{{ e }}</div>
+  }
+  <main class="content">
+    <router-outlet />
+  </main>
+</div>

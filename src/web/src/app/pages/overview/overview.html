@@ -1,0 +1,39 @@
+@if (error(); as e) {
+  <div class="banner error">{{ e }}</div>
+}
+@if (overview(); as o) {
+  <section class="stats">
+    <div class="stat"><span class="stat-label">Version</span><span class="stat-value">{{ o.productName ?? 'RabbitMQ' }} {{ o.rabbitmqVersion }}</span><span class="muted">Erlang {{ o.erlangVersion }}</span></div>
+    <div class="stat"><span class="stat-label">Messages</span><span class="stat-value">{{ o.queueTotals?.messages | num }}</span><span class="muted">{{ o.queueTotals?.messagesReady | num }} ready · {{ o.queueTotals?.messagesUnacknowledged | num }} unacked</span></div>
+    <div class="stat"><span class="stat-label">Publish / Deliver</span><span class="stat-value">{{ (o.messageStats?.publishDetails?.rate ?? 0).toFixed(1) }} / {{ (o.messageStats?.deliverGetDetails?.rate ?? 0).toFixed(1) }}</span><span class="muted">msg/s</span></div>
+    <div class="stat"><span class="stat-label">Queues</span><span class="stat-value">{{ o.objectTotals?.queues | num }}</span><span class="muted">{{ o.objectTotals?.exchanges | num }} exchanges</span></div>
+    <div class="stat"><span class="stat-label">Connections</span><span class="stat-value">{{ o.objectTotals?.connections | num }}</span><span class="muted">{{ o.objectTotals?.channels | num }} channels · {{ o.objectTotals?.consumers | num }} consumers</span></div>
+  </section>
+}
+@if (nodes(); as list) {
+  <h2>Nodes</h2>
+  <section class="nodes">
+    @for (n of list; track n.name) {
+      <article class="card node">
+        <header>
+          <span class="dot" [class.ok]="n.running" [class.danger]="!n.running"></span>
+          <strong class="mono">{{ n.name }}</strong>
+          <span class="muted">{{ n.type }} · {{ n.processors }} CPU · uptime {{ n.uptime | uptime }} · run queue {{ n.runQueue ?? 0 }}</span>
+        </header>
+        @for (g of gauges(n); track g.label) {
+          <div class="gauge">
+            <span class="gauge-label">{{ g.label }} @if (g.alarm) { <span class="badge danger">ALARM</span> }</span>
+            <div class="bar"><div [class]="'fill ' + level(g)" [style.width.%]="percent(g)"></div></div>
+            <span class="gauge-value">
+              @if (g.bytes) { {{ g.used | bytes }} / {{ g.limit | bytes }} } @else { {{ g.used | num }} / {{ g.limit | num }} }
+              @if (g.inverse) { <span class="muted">(threshold)</span> }
+            </span>
+          </div>
+        }
+      </article>
+    }
+  </section>
+}
+@if (!data() && !error()) {
+  <p class="muted">Loading…</p>
+}
