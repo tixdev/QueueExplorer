@@ -21,6 +21,52 @@ public static class MessageOperationEndpoints
         messages.MapPost("/transfer", Transfer);
         messages.MapPost("/export", Export);
         messages.MapPost("/stage", Stage);
+        messages.MapPost("/delete", Delete);
+        app.MapPost("/api/clusters/{cluster}/queues/purge", Purge).RequireAuthorization();
+    }
+
+    /// <summary>Deletes the selected messages (or the first N): they are read without ack, then acknowledged.</summary>
+    private static async Task<IResult> Delete(
+        string cluster, QueueSelection request, CurrentUser user, MessageOperations operations, ClusterSnapshotService snapshots,
+        IAuditLog audit, IOptions<RabbitMqOptions> options, CancellationToken ct)
+    {
+        var permissions = await user.GetPermissionsAsync(ct);
+        if (!permissions.Allows(Permissions.MessagesDelete, new ResourceRef(cluster, request.Vhost, request.Queue)))
+        {
+            await audit.WriteAsync(new AuditRecord(user.Username, Permissions.MessagesDelete, AuditOutcome.Denied, cluster, request.Vhost, request.Queue), ct);
+            return Results.Forbid();
+        }
+        if (Selection(request.Count, request.Keys, options.Value) is not { } selection)
+            return Results.Problem("Select messages or give a count.", statusCode: StatusCodes.Status400BadRequest);
+
+        var deleted = await operations.TakeAsync(cluster, request.Vhost, request.Queue, selection, remove: true, _ => Task.CompletedTask, ct);
+        await audit.WriteAsync(new AuditRecord(user.Username, Permissions.MessagesDelete, AuditOutcome.Success, cluster, request.Vhost, request.Queue,
+            $"deleted={deleted}{(request.Keys is { Count: > 0 } ? " (selected)" : $" (first {request.Count})")}"), ct);
+        await RefreshQuietly(snapshots, cluster);
+        return Results.Ok(new DeleteResult(deleted));
+    }
+
+    /// <summary>Empties a queue. The caller must repeat the queue name, as typed confirmation.</summary>
+    private static async Task<IResult> Purge(
+        string cluster, PurgeRequest request, CurrentUser user, ClusterClients clients, ClusterSnapshotService snapshots,
+        IAuditLog audit, CancellationToken ct)
+    {
+        var permissions = await user.GetPermissionsAsync(ct);
+        if (!permissions.Allows(Permissions.QueuesPurge, new ResourceRef(cluster, request.Vhost, request.Queue)))
+        {
+            await audit.WriteAsync(new AuditRecord(user.Username, Permissions.QueuesPurge, AuditOutcome.Denied, cluster, request.Vhost, request.Queue), ct);
+            return Results.Forbid();
+        }
+        if (!string.Equals(request.ConfirmName, request.Queue, StringComparison.Ordinal))
+            return Results.Problem("Type the queue name exactly to confirm the purge.", statusCode: StatusCodes.Status400BadRequest);
+
+        var client = clients.Get(cluster);
+        var before = (await client.GetQueueBrowseSafetyAsync(request.Vhost, request.Queue, ct)).Messages;
+        await client.PurgeAsync(request.Vhost, request.Queue, ct);
+        await audit.WriteAsync(new AuditRecord(user.Username, Permissions.QueuesPurge, AuditOutcome.Success, cluster, request.Vhost, request.Queue,
+            $"purged, messages before={before}"), ct);
+        await RefreshQuietly(snapshots, cluster);
+        return Results.Ok(new PurgeResult(before));
     }
 
     private static async Task<IResult> Transfer(

@@ -136,3 +136,8 @@ public sealed record RmqGetMessage(
     Dictionary<string, JsonElement>? Properties,
     string Payload,
     string PayloadEncoding);
+
+/// <summary>A page of a filtered list call (the management API pages results when a name filter is used).</summary>
+public sealed record RmqPage<T>(List<T> Items, int? FilteredCount = null);
+
+public sealed record RmqQueueDepth(string Name, string Vhost, long? Messages = null);

@@ -155,7 +155,8 @@ public static class ClusterEndpoints
         if (permissions.ActionsAnywhereIn(cluster).Count == 0)
             return NotFoundOrForbidden(permissions, cluster);
 
-        var snapshot = await snapshots.RefreshAsync(cluster, ct);
+        // A manual refresh also re-reads the structure (exchanges, bindings…), which is otherwise read less often.
+        var snapshot = await snapshots.RefreshAsync(cluster, ct, includeStructure: true);
         return Results.Ok(Info(snapshots, snapshot));
     }
 

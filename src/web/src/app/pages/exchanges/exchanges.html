@@ -6,63 +6,104 @@
         <option [value]="v" [selected]="v === vhost()">{{ v }}</option>
       }
     </select>
+    <div class="segmented" role="group" aria-label="Exchange kind">
+      <button [class.active]="kind() === 'all'" (click)="kind.set('all')">All <span class="count">{{ counts().all | num }}</span></button>
+      <button [class.active]="kind() === 'event'" (click)="kind.set('event')">Events <span class="count">{{ counts().event | num }}</span></button>
+      <button [class.active]="kind() === 'endpoint'" (click)="kind.set('endpoint')">Endpoints <span class="count">{{ counts().endpoint | num }}</span></button>
+      <button [class.active]="kind() === 'other'" (click)="kind.set('other')">Other <span class="count">{{ counts().other | num }}</span></button>
+    </div>
     <input class="search" type="search" placeholder="Search exchanges…" [value]="search()" (input)="search.set($any($event.target).value)" />
     <label class="check"><input type="checkbox" [checked]="hideInfrastructure()" (change)="hideInfrastructure.set($any($event.target).checked)" /> Hide amq.* and NServiceBus infrastructure</label>
-    <span class="spacer"></span>
-    <span class="muted">{{ exchanges().length | num }} exchange</span>
   </div>
 
   <div class="split">
     <div class="table exchanges-table">
-      <div class="thead row"><span class="th">Exchange</span><span class="th">Type</span><span class="th num">Bindings</span></div>
+      <div class="thead row"><span class="th">Exchange</span><span class="th">Kind</span><span class="th num" title="Subscribers for events, bindings otherwise">Links</span></div>
       <cdk-virtual-scroll-viewport itemSize="34" class="viewport">
-        <button *cdkVirtualFor="let e of exchanges(); trackBy: track" class="row" [class.selected]="selected()?.vhost === e.vhost && selected()?.name === e.name" (click)="select(e)">
+        <button *cdkVirtualFor="let r of exchanges(); trackBy: track" class="row" [class.selected]="selected()?.vhost === r.exchange.vhost && selected()?.name === r.exchange.name" (click)="select(r.exchange)">
           <span class="cell name">
-            @if (!vhost()) { <span class="vhost">{{ e.vhost }}</span> }
-            <span class="mono">{{ displayName(e.name) }}</span>
+            @if (!vhost()) { <span class="vhost">{{ r.exchange.vhost }}</span> }
+            @if (r.kind === 'event') {
+              <span class="event-name"><strong>{{ eventName(r.exchange.name).name }}</strong> <span class="muted mono small">{{ eventName(r.exchange.name).ns }}</span></span>
+            } @else {
+              <span class="mono">{{ displayName(r.exchange.name) }}</span>
+            }
           </span>
-          <span class="cell"><span class="badge muted">{{ e.type }}</span></span>
-          <span class="cell num">{{ store.bindingsFrom(e.vhost, e.name).length }}</span>
+          <span class="cell"><span [class]="'kind-badge ' + r.kind">{{ kindLabel(r.kind) }}</span></span>
+          <span class="cell num" [class.warn-text]="r.kind === 'event' && r.links === 0">{{ r.links }}</span>
         </button>
       </cdk-virtual-scroll-viewport>
     </div>
 
     <aside class="card side">
-      @if (current(); as e) {
-        <h3 class="mono">{{ displayName(e.name) }}</h3>
-        <p class="muted">{{ e.vhost }} · {{ e.type }} · {{ e.durable ? 'durable' : 'transient' }}{{ e.internal ? ' · internal' : '' }}</p>
+      @if (current(); as c) {
+        <header class="side-head">
+          <span [class]="'kind-badge ' + c.kind">{{ kindLabel(c.kind) }}</span>
+          <span class="muted small">{{ c.exchange.vhost }} · {{ c.exchange.type }} · {{ c.exchange.durable ? 'durable' : 'transient' }}{{ c.exchange.internal ? ' · internal' : '' }}</span>
+        </header>
 
-        <h4>To <span class="count">{{ outgoing().length }}</span></h4>
-        <table class="kv">
-          @for (b of outgoing(); track b.destinationType + b.destination + b.routingKey) {
-            <tr>
-              <th>
-                @if (b.destinationType === 'queue') {
-                  <a class="mono" [routerLink]="['/c', store.cluster(), 'queues', b.vhost, b.destination]">⇢ {{ b.destination }}</a>
-                } @else {
-                  <button class="link mono" (click)="selected.set({ vhost: b.vhost, name: b.destination })">⇉ {{ b.destination }}</button>
-                }
-              </th>
-              <td class="mono">{{ b.routingKey }}</td>
-            </tr>
-          } @empty {
-            <tr><td class="muted">No outgoing bindings</td></tr>
+        @if (c.kind === 'event') {
+          <h4>Subscribers <span class="count">{{ subscribers().length }}</span></h4>
+          <app-event-flow [cluster]="store.cluster()!" [vhost]="c.exchange.vhost" [event]="c.exchange.name" [subscribers]="subscribers()" (openEvent)="openEvent($event)" />
+        } @else if (c.kind === 'endpoint') {
+          <h3 class="mono">{{ c.exchange.name }}</h3>
+          @if (endpointQueue(); as q) {
+            <p class="muted small">
+              Queue: <a class="mono" [routerLink]="['/c', store.cluster(), 'queues', q.vhost, q.name]">{{ q.name }}</a> ·
+              {{ q.messages | num }} messages · {{ q.consumers | num }} consumers
+            </p>
           }
-        </table>
+          <h4>Subscribed to <span class="count">{{ subscriptions().length }}</span></h4>
+          <ul class="subscription-list">
+            @for (s of subscriptions(); track s.event) {
+              <li>
+                <button class="link" (click)="selected.set({ vhost: c.exchange.vhost, name: s.event })">
+                  <strong>{{ eventName(s.event).name }}</strong>
+                </button>
+                <span class="muted mono small">{{ eventName(s.event).ns }}</span>
+                @if (s.via.length) { <span class="muted small">· via {{ eventName(s.via[s.via.length - 1]).name }}</span> }
+              </li>
+            } @empty {
+              <li class="muted small">This endpoint is not subscribed to any event.</li>
+            }
+          </ul>
+        } @else {
+          <h3 class="mono">{{ displayName(c.exchange.name) }}</h3>
+        }
 
-        <h4>From <span class="count">{{ incoming().length }}</span></h4>
-        <table class="kv">
-          @for (b of incoming(); track b.source + b.routingKey) {
-            <tr>
-              <th><button class="link mono" (click)="selected.set({ vhost: b.vhost, name: b.source })">⇇ {{ b.source }}</button></th>
-              <td class="mono">{{ b.routingKey }}</td>
-            </tr>
-          } @empty {
-            <tr><td class="muted">No exchanges bound to this one</td></tr>
-          }
-        </table>
+        <details class="raw-bindings" [open]="c.kind !== 'event' && c.kind !== 'endpoint'">
+          <summary>Bindings <span class="count">{{ outgoing().length }} out · {{ incoming().length }} in</span></summary>
+          <h4>To</h4>
+          <table class="kv">
+            @for (b of outgoing(); track b.destinationType + b.destination + b.routingKey) {
+              <tr>
+                <th>
+                  @if (b.destinationType === 'queue') {
+                    <a class="mono" [routerLink]="['/c', store.cluster(), 'queues', b.vhost, b.destination]">⇢ {{ b.destination }}</a>
+                  } @else {
+                    <button class="link mono" (click)="selected.set({ vhost: b.vhost, name: b.destination })">⇉ {{ b.destination }}</button>
+                  }
+                </th>
+                <td class="mono">{{ b.routingKey }}</td>
+              </tr>
+            } @empty {
+              <tr><td class="muted">No outgoing bindings</td></tr>
+            }
+          </table>
+          <h4>From</h4>
+          <table class="kv">
+            @for (b of incoming(); track b.source + b.routingKey) {
+              <tr>
+                <th><button class="link mono" (click)="selected.set({ vhost: b.vhost, name: b.source })">⇇ {{ b.source }}</button></th>
+                <td class="mono">{{ b.routingKey }}</td>
+              </tr>
+            } @empty {
+              <tr><td class="muted">No exchanges bound to this one</td></tr>
+            }
+          </table>
+        </details>
       } @else {
-        <p class="muted">Select an exchange to see its bindings.</p>
+        <p class="muted">Select an exchange. For NServiceBus events you see who subscribes to them; for endpoints, the events they receive.</p>
       }
     </aside>
   </div>

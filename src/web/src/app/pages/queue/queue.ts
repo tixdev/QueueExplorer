@@ -50,6 +50,9 @@ export class QueuePage {
   readonly selectedKeys = signal<ReadonlySet<string>>(new Set());
 
   readonly dialog = signal<'move' | 'copy' | 'retry' | null>(null);
+  readonly confirmDelete = signal(false);
+  readonly purging = signal(false);
+  readonly purgeName = signal('');
   readonly working = signal(false);
   readonly outcome = signal<{ text: string; failures: OperationFailure[]; stagingBatch?: number } | null>(null);
 
@@ -60,6 +63,8 @@ export class QueuePage {
       publish: this.auth.can(cluster, Actions.messagesPublish),
       export: this.auth.can(cluster, Actions.messagesExport),
       stage: this.auth.canGlobal(Actions.stagingWrite),
+      delete: this.auth.can(cluster, Actions.messagesDelete),
+      purge: this.auth.can(cluster, Actions.queuesPurge),
     };
   });
   /** Messages the next operation applies to, as far as the browse result shows them. */
@@ -172,6 +177,25 @@ export class QueuePage {
       failures: [],
       stagingBatch: b.id,
     }), remove);
+  }
+
+  deleteMessages(): void {
+    this.confirmDelete.set(false);
+    const { keys, count } = this.scope();
+    this.run(this.api.deleteMessages(this.store.cluster()!, this.vhost(), this.name(), keys, count), (r) => ({
+      text: `Deleted ${r.deleted} message${r.deleted === 1 ? '' : 's'}.`,
+      failures: [],
+    }), true);
+  }
+
+  purge(): void {
+    const name = this.purgeName();
+    this.purging.set(false);
+    this.purgeName.set('');
+    this.run(this.api.purgeQueue(this.store.cluster()!, this.vhost(), this.name(), name), (r) => ({
+      text: `Queue purged${r.messagesBefore !== undefined && r.messagesBefore !== null ? ` (${r.messagesBefore} messages removed)` : ''}.`,
+      failures: [],
+    }), true);
   }
 
   private scope(): { keys?: string[]; count?: number } {

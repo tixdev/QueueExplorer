@@ -2,6 +2,10 @@
   <nav class="breadcrumb">
     <a [routerLink]="['/c', store.cluster(), 'queues']">Queues</a> <span>›</span> <span class="vhost">{{ vhost() }}</span> <span>›</span>
     <strong class="mono">{{ name() }}</strong>
+    <span class="spacer"></span>
+    @if (can().purge && queue()) {
+      <button class="small danger" (click)="purging.set(true)" [disabled]="working()" title="Remove every ready message of this queue">Purge…</button>
+    }
   </nav>
 
   @if (queue(); as q) {
@@ -84,6 +88,19 @@
           }
         </div>
       }
+      @if (confirmDelete()) {
+        <div class="overlay" (click)="confirmDelete.set(false)">
+          <div class="card dialog" (click)="$event.stopPropagation()">
+            <h3>Delete messages</h3>
+            <p>Delete <strong>{{ scopeLabel() }}</strong> messages of <span class="mono">{{ vhost() }}/{{ name() }}</span>? They are removed from RabbitMQ and cannot be recovered.</p>
+            <p class="muted small">Tip: “Move to staging” keeps a copy you can publish again later.</p>
+            <div class="dialog-actions">
+              <button (click)="confirmDelete.set(false)">Cancel</button>
+              <button class="danger-solid" (click)="deleteMessages()">Delete</button>
+            </div>
+          </div>
+        </div>
+      }
       @if (dialog(); as d) {
         <app-destination-dialog
           [title]="d === 'move' ? 'Move messages' : d === 'copy' ? 'Copy messages' : 'Retry failed messages'"
@@ -125,6 +142,9 @@
               <button (click)="stage(true)" [disabled]="working()" title="Move to staging, removing the messages from the queue">Move to staging</button>
             }
           }
+          @if (can().delete) {
+            <button class="danger" (click)="confirmDelete.set(true)" [disabled]="working()">Delete…</button>
+          }
           @if (working()) { <span class="muted">Working…</span> }
         </div>
         <div class="messages-split">
@@ -137,6 +157,22 @@
         </div>
       }
     </section>
+    @if (purging()) {
+      <div class="overlay" (click)="purging.set(false)">
+        <div class="card dialog" (click)="$event.stopPropagation()">
+          <h3>Purge queue</h3>
+          <p>Remove <strong>every ready message</strong> ({{ q.ready | num }}) from <span class="mono">{{ vhost() }}/{{ name() }}</span>. This cannot be undone.
+            Unacknowledged messages stay with their consumers.</p>
+          <label class="confirm-label">Type <span class="mono">{{ name() }}</span> to confirm
+            <input class="mono" [value]="purgeName()" (input)="purgeName.set($any($event.target).value)" autofocus />
+          </label>
+          <div class="dialog-actions">
+            <button (click)="purging.set(false); purgeName.set('')">Cancel</button>
+            <button class="danger-solid" [disabled]="purgeName() !== name()" (click)="purge()">Purge queue</button>
+          </div>
+        </div>
+      </div>
+    }
   } @else if (store.topology()) {
     <p class="muted">Queue not found or not visible.</p>
   } @else {

@@ -19,7 +19,20 @@ IBM MQ and Kafka support are planned; the code is organised so that other broker
 ## What you can do
 
 ### Explore clusters
-- **Overview**: RabbitMQ/Erlang versions, message totals and rates, connections, channels, consumers.
+- **Overview** — a compact operational dashboard:
+  - KPI tiles: messages (with sparkline), messages in error queues (with sparkline), publish/deliver rates, stopped
+    endpoints, queues, connections;
+  - **Health**: nodes down, memory/disk alarms, memory or file descriptors above 80%, queues not running, shovels not
+    running, endpoints with messages and no consumers, messages in error queues — each with a status icon and a link;
+  - **Trend** of all messages and of messages in error queues over 1 h / 6 h / 24 h (two small multiples sharing one
+    time axis, crosshair tooltip, keyboard navigation, table view). Samples are taken every minute, also while nobody
+    uses the explorer, and kept in memory for 24 h;
+  - **Failures**: on request ("Analyse"), the NServiceBus error queues are read (headers only) and grouped by failing
+    endpoint and exception type, with counts, last failure and a sample message. Queues whose delivery limit could
+    dead-letter messages are skipped; results are cached and shared by every authorised user;
+  - **Queues with most messages**, **stopped endpoints** (messages waiting, no consumers) and a **per-vhost summary**
+    (queues, messages, messages in error queues, stopped endpoints);
+  - node resources in one line per node.
 - **Node resources**: memory, free disk (against its alarm threshold), file descriptors, Erlang processes, with alarm
   highlighting. Metrics a RabbitMQ version does not report are hidden.
 - **Queues**: every queue of every visible vhost in one virtualised list — depth, ready/unacked, consumers (queues
@@ -27,8 +40,11 @@ IBM MQ and Kafka support are planned; the code is organised so that other broker
   name/messages/consumers, hide the NServiceBus delayed-delivery infrastructure (`nsb.v2.delay-*`).
 - **Queue detail**: live message rates, the effective **delivery limit** (quorum queues), policy, arguments and the
   bindings that route into the queue.
-- **Exchanges**: list with incoming and outgoing bindings (exchange → exchange and exchange → queue), navigable in both
-  directions; built-in `amq.*` and NServiceBus infrastructure can be hidden.
+- **Exchanges**: every exchange classified for the NServiceBus conventional routing topology — **events** (`Namespace:Type`
+  exchanges), **endpoints** (exchange bound to the queue of the same name), delayed-delivery infrastructure, built-in —
+  with a filter per kind. For an event, a **flow diagram** shows its subscribing endpoints (directly or through base
+  types/interfaces, e.g. "via IOrderEvent") with their queue depth and consumers; for an endpoint, the events it is
+  subscribed to. Raw bindings stay available in both directions.
 - **Shovels**: status of static and dynamic shovels merged with their definitions, so a shovel that cannot connect
   (and therefore has no status in RabbitMQ) is still listed. Credentials in shovel URIs are masked.
 
@@ -41,7 +57,8 @@ IBM MQ and Kafka support are planned; the code is organised so that other broker
     endpoint and machine, time of failure, delayed retries, application data attached to the exception
     (`Exception.Data`) and the stack trace;
   - all headers grouped (failure, exception data, saga, diagnostics, ServiceControl, NServiceBus, other).
-- **Body viewer**: JSON and XML are pretty-printed, binary payloads get a hex dump; copy to clipboard.
+- **Body viewer**: JSON and XML are pretty-printed and **syntax-coloured** (keys, strings, numbers, literals; tags,
+  attributes, values), binary payloads get a hex dump; copy to clipboard.
 
 ### Move, copy, retry
 All operations work on the **selected messages** or, if none is selected, on the **first N messages** of the queue.
@@ -53,6 +70,8 @@ All operations work on the **selected messages** or, if none is selected, on the
   confirms, mandatory routing). Unroutable or rejected messages stay in the source queue and are reported.
 - Broker-managed headers (`x-delivery-count`, `x-death`, `x-first-death-*`, `x-last-death-*`) are dropped on
   republishing, since they describe the history of the original copy.
+- **Delete** the selected messages (or the first N), after a confirmation.
+- **Purge** a queue: removes every ready message; the queue name must be typed to confirm (checked by the server too).
 
 ### Files and staging area
 - **Save to file**: export messages to a `.mqx` file — a zip with one JSON document per message (routing, properties,
@@ -77,8 +96,8 @@ All operations work on the **selected messages** or, if none is selected, on the
   group grants and are assigned to users or groups. Everything is denied unless granted, and checks are enforced only
   on the server. Clusters a user cannot access at all answer 404, not 403.
 - **Actions**: `overview.read`, `nodes.read` (cluster), `exchanges.read`, `shovels.read` (vhost), `queues.read`,
-  `messages.browse`, `messages.move`, `messages.publish`, `messages.export` (queue), `staging.read`,
-  `staging.write`, `audit.read` (global), `*` (everything). Move requires `messages.move` on the source and
+  `messages.browse`, `messages.move`, `messages.publish`, `messages.export`, `messages.delete`, `queues.purge` (queue),
+  `staging.read`, `staging.write`, `audit.read` (global), `*` (everything). Move requires `messages.move` on the source and
   `messages.publish` on the destination.
 - **Audit log** of logins, browses, moves, copies, retries, exports, staging imports/edits/publishes, including denied
   attempts, with keyset-paginated viewer.
@@ -92,11 +111,16 @@ All operations work on the **selected messages** or, if none is selected, on the
 
 ## How it stays fast
 
-- **Snapshots, not per-request calls.** A background loop per cluster keeps an in-memory snapshot built from a handful
-  of parallel bulk calls (`overview`, `nodes`, `vhosts`, `queues` with `disable_stats`, `consumers`, `exchanges`,
-  `bindings`, `shovels`, `parameters/shovel`). List views never call RabbitMQ, so broker load does not grow with users.
-- **Adaptive polling**: every 5 s while a cluster is in use, every 60 s when idle; a stale snapshot is refreshed before
-  answering, and concurrent refreshes are coalesced.
+- **Snapshots, not per-request calls.** A background loop per cluster keeps an in-memory snapshot built from parallel
+  bulk calls. List views never call RabbitMQ, so broker load does not grow with users.
+- **Two refresh tiers.** The *state* — `queues` (with `disable_stats`), `consumers`, `overview`, `nodes`, `shovels` —
+  is refreshed every 5 s; the *structure* that changes mostly with deployments — `vhosts`, `exchanges`, `bindings`,
+  `parameters/shovel` — every 60 s, or immediately with the refresh button. New queues therefore show up within 5 s;
+  new exchanges and bindings within a minute. A state-only cycle costs ~45 ms of broker time, a full one ~65 ms
+  (local measurements, ~50 KB gzip).
+- **Polling only while the cluster is in use.** After 2 minutes without requests the loop stops (configurable to slow
+  polling instead); the next request waits for a fresh snapshot (~70 ms) and polling resumes. A stale snapshot is always
+  refreshed before answering, and concurrent refreshes are coalesced. All intervals can be overridden per cluster.
 - **Bounded connections**: one pooled HTTP client per cluster (max 4 connections). AMQP is used only for message
   operations, with one long-lived connection per cluster and vhost, closed after 5 idle minutes. Messages are read with
   a prefetching consumer (one round-trip for the whole batch, not one `basic.get` per message) and published in
@@ -227,10 +251,17 @@ in `appsettings.Local.json` replaces the `local` development cluster, one at ind
 |---|---|
 | `ConnectionStrings:Explorer` | SQL Server database (roles, audit, staging) |
 | `Clusters[]` | `Name`, `Description`, `ManagementUrl`, `AmqpUrl`, `CaCertificatePath`, `Username`, `Password` |
-| `RabbitMq:ActiveRefreshInterval` / `IdleRefreshInterval` / `IdleAfter` | snapshot polling (5 s / 60 s / 2 min) |
+| `RabbitMq:ActiveRefreshInterval` | state refresh while the cluster is in use (5 s) |
+| `RabbitMq:StructureRefreshInterval` | structure refresh: vhosts, exchanges, bindings, shovel definitions (60 s) |
+| `RabbitMq:IdleAfter` | a cluster without requests for this long is idle (2 min) |
+| `RabbitMq:IdleRefreshInterval` | polling while idle; unset (default) = no polling |
+| `Clusters[].Refresh` | per-cluster overrides of the four settings above, e.g. `{ "ActiveRefreshInterval": "00:00:15" }` |
 | `RabbitMq:MaxConnectionsPerCluster` | HTTP connections towards each management API (4) |
 | `RabbitMq:AmqpIdleTimeout` | idle AMQP connections are closed after this (5 min) |
-| `RabbitMq:MaxMessagesPerOperation` | upper bound of a move/copy/export/stage (10 000) |
+| `RabbitMq:MaxMessagesPerOperation` | upper bound of a move/copy/export/stage/delete (10 000) |
+| `RabbitMq:TrendSampleInterval` | overview trend sampling (1 min; unset disables the trend) |
+| `RabbitMq:TrendRetention` | trend history kept in memory (24 h) |
+| `RabbitMq:ErrorAnalysisMaxMessages` | messages read per error queue by the failure analysis (1 000) |
 | `RabbitMq:BrowseTruncateBytes` | payloads larger than this are truncated when browsing (256 KB) |
 | `LocalUsers[]` | test-phase users (`Username`, `Password`, `DisplayName`, `Groups`) |
 
@@ -239,7 +270,7 @@ in `appsettings.Local.json` replaces the `local` development cluster, one at ind
 | user      | password  | access |
 |-----------|-----------|--------|
 | `admin`   | `admin`   | everything (group `admins` → role *Administrators*) |
-| `support` | `support` | read everything; browse, export, move and republish in vhosts `sales` and `billing`; staging |
+| `support` | `support` | read everything; browse, export, move, delete and republish in vhosts `sales` and `billing`; staging |
 | `sales`   | `sales`   | vhost `sales` only: `Sales.*` queues and `error`, exchanges; browse `error` |
 | `nobody`  | `nobody`  | no roles |
 
@@ -257,6 +288,7 @@ cd src/web && npx ng build           # frontend build (production)
 - Login: hardcoded users for the test phase → OIDC (groups map onto the same role assignments). No role management UI yet.
 - Cluster credentials in configuration → secret store (Key Vault / Kubernetes secrets).
 - Importing QueueExplorer's proprietary `.mq` files (needs sample files to reverse-engineer the format).
-- Purge/delete; shovel management; SignalR push instead of polling; client certificates (mutual TLS).
+- Shovel management; SignalR push instead of polling; client certificates (mutual TLS).
+- The overview trend lives in memory: it restarts empty with the API (persisting it is a small step).
 - Browsing streams; AMQP 1.0 browse with the `modified` outcome to avoid incrementing the quorum delivery count.
 - IBM MQ and Kafka (the staging area already records the broker of each message).

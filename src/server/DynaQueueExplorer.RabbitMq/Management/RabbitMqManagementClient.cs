@@ -53,6 +53,15 @@ public sealed class RabbitMqManagementClient(HttpClient http, ClusterOptions clu
     public Task<RmqQueue> GetQueueBrowseSafetyAsync(string vhost, string name, CancellationToken ct) =>
         GetAsync($"api/queues/{Escape(vhost)}/{Escape(name)}?columns=name,vhost,type,messages,delivery_limit", RmqJsonContext.Default.RmqQueue, ct);
 
+    /// <summary>Depths of the error queues only, filtered by the broker (a few hundred bytes, for the trend sampler).</summary>
+    public async Task<List<RmqQueueDepth>> GetErrorQueueDepthsAsync(CancellationToken ct)
+    {
+        var name = Uri.EscapeDataString(@"(^|\.)error$");
+        var page = await GetAsync($"api/queues?page=1&page_size=500&name={name}&use_regex=true&disable_stats=true&enable_queue_totals=true&columns=name,vhost,messages",
+            RmqJsonContext.Default.RmqPageRmqQueueDepth, ct);
+        return page.Items;
+    }
+
     public Task<List<RmqConsumer>> GetConsumersAsync(CancellationToken ct, PayloadFingerprint? fingerprint = null) =>
         GetAsync("api/consumers?columns=queue.name,queue.vhost", RmqJsonContext.Default.ListRmqConsumer, ct, fingerprint);
 
@@ -82,6 +91,30 @@ public sealed class RabbitMqManagementClient(HttpClient http, ClusterOptions clu
         return await SendAsync(request, RmqJsonContext.Default.ListRmqGetMessage, ct);
     }
 
+    /// <summary>Removes every ready message of the queue (unacknowledged ones stay with their consumers).</summary>
+    public async Task PurgeAsync(string vhost, string queue, CancellationToken ct)
+    {
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        deadline.CancelAfter(http.Timeout);
+        using var request = new HttpRequestMessage(HttpMethod.Delete, $"api/queues/{Escape(vhost)}/{Escape(queue)}/contents");
+        request.Headers.Authorization = _authorization;
+        HttpResponseMessage response;
+        try
+        {
+            response = await http.SendAsync(request, deadline.Token);
+        }
+        catch (HttpRequestException e)
+        {
+            throw new RabbitMqApiException($"Cluster '{cluster.Name}' is unreachable: {e.Message}", null, e);
+        }
+        using (response)
+        {
+            if (!response.IsSuccessStatusCode)
+                throw new RabbitMqApiException($"Cluster '{cluster.Name}' returned {(int)response.StatusCode} purging {vhost}/{queue}: " +
+                                               Truncate(await response.Content.ReadAsStringAsync(ct), 300), response.StatusCode);
+        }
+    }
+
     private Task<T> GetAsync<T>(string path, JsonTypeInfo<T> type, CancellationToken ct, PayloadFingerprint? fingerprint = null) =>
         SendAsync(new HttpRequestMessage(HttpMethod.Get, path), type, ct, fingerprint);
 
@@ -97,8 +130,13 @@ public sealed class RabbitMqManagementClient(HttpClient http, ClusterOptions clu
         }
     }
 
-    private async Task<T> SendAsync<T>(HttpRequestMessage request, JsonTypeInfo<T> type, CancellationToken ct, PayloadFingerprint? fingerprint = null)
+    private async Task<T> SendAsync<T>(HttpRequestMessage request, JsonTypeInfo<T> type, CancellationToken callerToken, PayloadFingerprint? fingerprint = null)
     {
+        // HttpClient.Timeout stops at the response headers (ResponseHeadersRead): bound the body read as well, so a
+        // stalled response can never hang a caller that has no deadline of its own.
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(callerToken);
+        deadline.CancelAfter(http.Timeout);
+        var ct = deadline.Token;
         using (request)
         {
             request.Headers.Authorization = _authorization;
@@ -110,6 +148,10 @@ public sealed class RabbitMqManagementClient(HttpClient http, ClusterOptions clu
             catch (HttpRequestException e)
             {
                 throw new RabbitMqApiException($"Cluster '{cluster.Name}' is unreachable: {e.Message}", null, e);
+            }
+            catch (OperationCanceledException e) when (!callerToken.IsCancellationRequested)
+            {
+                throw new RabbitMqApiException($"Cluster '{cluster.Name}' did not answer within {http.Timeout.TotalSeconds:0} s ({request.RequestUri}).", null, e);
             }
 
             using (response)

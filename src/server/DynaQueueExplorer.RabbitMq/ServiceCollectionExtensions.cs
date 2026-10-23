@@ -15,6 +15,8 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ClusterClients>();
         services.AddSingleton<ClusterSnapshotService>();
         services.AddHostedService(sp => sp.GetRequiredService<ClusterSnapshotService>());
+        services.AddSingleton<ClusterTrends>();
+        services.AddHostedService(sp => sp.GetRequiredService<ClusterTrends>());
         services.AddSingleton<AmqpConnections>();
         services.AddHostedService(sp => sp.GetRequiredService<AmqpConnections>());
         services.AddSingleton<MessageOperations>();

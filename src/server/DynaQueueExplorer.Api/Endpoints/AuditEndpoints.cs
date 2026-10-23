@@ -1,3 +1,4 @@
+using System.Text.Json;
 using DynaQueueExplorer.Api.Security;
 using DynaQueueExplorer.Core.Security;
 using DynaQueueExplorer.Infrastructure.Persistence;
@@ -23,9 +24,10 @@ public static class AuditEndpoints
             var entries = await query
                 .OrderByDescending(a => a.Id)
                 .Take(Math.Clamp(take ?? 100, 1, 500))
-                .Select(a => new AuditEntryDto(a.Id, a.TimestampUtc, a.User, a.Action, a.Outcome.ToString(), a.Cluster, a.Vhost, a.Resource, a.Details))
                 .ToListAsync(ct);
-            return Results.Ok(entries);
+            // Outcomes are camelCase like every other enum in the API (the UI compares against "success").
+            return Results.Ok(entries.Select(a => new AuditEntryDto(a.Id, a.TimestampUtc, a.User, a.Action,
+                JsonNamingPolicy.CamelCase.ConvertName(a.Outcome.ToString()), a.Cluster, a.Vhost, a.Resource, a.Details)));
         }).RequireAuthorization();
     }
 }

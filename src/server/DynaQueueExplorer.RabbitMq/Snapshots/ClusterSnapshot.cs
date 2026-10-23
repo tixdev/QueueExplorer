@@ -6,9 +6,12 @@ namespace DynaQueueExplorer.RabbitMq.Snapshots;
 /// Immutable picture of a cluster, refreshed in the background with a handful of bulk API calls.
 /// The two versions change only when the corresponding raw payloads change, so they double as ETags.
 /// </summary>
+/// <param name="FetchedAt">When the state (depths, consumers, nodes, shovel status) was read.</param>
+/// <param name="StructureFetchedAt">When the structure (vhosts, exchanges, bindings, shovel definitions) was read.</param>
 public sealed record ClusterSnapshot(
     string Cluster,
     DateTimeOffset FetchedAt,
+    DateTimeOffset StructureFetchedAt,
     TimeSpan FetchDuration,
     ulong TopologyVersion,
     ulong MetricsVersion,

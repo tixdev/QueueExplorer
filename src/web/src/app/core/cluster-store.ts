@@ -1,7 +1,8 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
 import { EMPTY, map } from 'rxjs';
 import { Api } from './api';
-import { Binding, Exchange, Queue, Topology } from './models';
+import { Auth } from './auth';
+import { Actions, Binding, Exchange, Queue, Topology } from './models';
 import { poll } from './polling';
 
 const SEP = '\u0000';
@@ -17,13 +18,16 @@ export function queueKey(vhost: string, name: string): string {
 @Injectable()
 export class ClusterStore {
   private readonly api = inject(Api);
+  private readonly auth = inject(Auth);
 
   readonly cluster = signal<string | null>(null);
 
   // Each result carries the cluster it was loaded for, so switching cluster never shows stale data.
   private readonly topologyPoll = poll(() => {
     const cluster = this.cluster();
-    return cluster
+    // Users without queue or exchange access (e.g. overview only) have no topology to load.
+    const allowed = cluster && (this.auth.can(cluster, Actions.queuesRead) || this.auth.can(cluster, Actions.exchangesRead));
+    return allowed
       ? this.api.topology(cluster).pipe(map((t) => ({ etag: t.etag, body: { cluster, topology: t.body } })))
       : EMPTY;
   }, 5000);

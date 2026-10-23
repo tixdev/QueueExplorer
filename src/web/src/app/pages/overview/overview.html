@@ -1,39 +1,261 @@
 @if (error(); as e) {
   <div class="banner error">{{ e }}</div>
 }
-@if (overview(); as o) {
-  <section class="stats">
-    <div class="stat"><span class="stat-label">Version</span><span class="stat-value">{{ o.productName ?? 'RabbitMQ' }} {{ o.rabbitmqVersion }}</span><span class="muted">Erlang {{ o.erlangVersion }}</span></div>
-    <div class="stat"><span class="stat-label">Messages</span><span class="stat-value">{{ o.queueTotals?.messages | num }}</span><span class="muted">{{ o.queueTotals?.messagesReady | num }} ready · {{ o.queueTotals?.messagesUnacknowledged | num }} unacked</span></div>
-    <div class="stat"><span class="stat-label">Publish / Deliver</span><span class="stat-value">{{ (o.messageStats?.publishDetails?.rate ?? 0).toFixed(1) }} / {{ (o.messageStats?.deliverGetDetails?.rate ?? 0).toFixed(1) }}</span><span class="muted">msg/s</span></div>
-    <div class="stat"><span class="stat-label">Queues</span><span class="stat-value">{{ o.objectTotals?.queues | num }}</span><span class="muted">{{ o.objectTotals?.exchanges | num }} exchanges</span></div>
-    <div class="stat"><span class="stat-label">Connections</span><span class="stat-value">{{ o.objectTotals?.connections | num }}</span><span class="muted">{{ o.objectTotals?.channels | num }} channels · {{ o.objectTotals?.consumers | num }} consumers</span></div>
+<div class="ov">
+  <!-- KPI row -->
+  <section class="ov-kpis">
+    <div class="kpi">
+      <span class="kpi-label">Messages</span>
+      <div class="kpi-main"><span class="kpi-value">{{ overview()?.queueTotals?.messages | num }}</span><app-sparkline [values]="sparkMessages()" /></div>
+      <span class="kpi-sub">{{ overview()?.queueTotals?.messagesReady | num }} ready · {{ overview()?.queueTotals?.messagesUnacknowledged | num }} unacked</span>
+    </div>
+    <div class="kpi">
+      <span class="kpi-label">In error queues</span>
+      <div class="kpi-main">
+        <span class="kpi-value">{{ errorMessages() | num }}</span>
+        <app-sparkline [values]="sparkErrors()" />
+      </div>
+      <span class="kpi-sub">{{ errorQueuesWithMessages().length }} error queue{{ errorQueuesWithMessages().length === 1 ? '' : 's' }} with messages</span>
+    </div>
+    <div class="kpi">
+      <span class="kpi-label">Publish / deliver</span>
+      <div class="kpi-main"><span class="kpi-value">{{ (overview()?.messageStats?.publishDetails?.rate ?? 0).toFixed(1) }} / {{ (overview()?.messageStats?.deliverGetDetails?.rate ?? 0).toFixed(1) }}</span></div>
+      <span class="kpi-sub">msg/s</span>
+    </div>
+    <div class="kpi">
+      <span class="kpi-label">Stopped endpoints</span>
+      <div class="kpi-main"><span class="kpi-value">{{ stopped().length | num }}</span></div>
+      <span class="kpi-sub">messages waiting, no consumers</span>
+    </div>
+    <div class="kpi">
+      <span class="kpi-label">Queues</span>
+      <div class="kpi-main"><span class="kpi-value">{{ overview()?.objectTotals?.queues | num }}</span></div>
+      <span class="kpi-sub">{{ overview()?.objectTotals?.exchanges | num }} exchanges</span>
+    </div>
+    <div class="kpi">
+      <span class="kpi-label">Connections</span>
+      <div class="kpi-main"><span class="kpi-value">{{ overview()?.objectTotals?.connections | num }}</span></div>
+      <span class="kpi-sub">{{ overview()?.objectTotals?.channels | num }} channels · {{ overview()?.objectTotals?.consumers | num }} consumers</span>
+    </div>
   </section>
-}
-@if (nodes(); as list) {
-  <h2>Nodes</h2>
-  <section class="nodes">
-    @for (n of list; track n.name) {
-      <article class="card node">
-        <header>
-          <span class="dot" [class.ok]="n.running" [class.danger]="!n.running"></span>
-          <strong class="mono">{{ n.name }}</strong>
-          <span class="muted">{{ n.type }} · {{ n.processors }} CPU · uptime {{ n.uptime | uptime }} · run queue {{ n.runQueue ?? 0 }}</span>
-        </header>
-        @for (g of gauges(n); track g.label) {
-          <div class="gauge">
-            <span class="gauge-label">{{ g.label }} @if (g.alarm) { <span class="badge danger">ALARM</span> }</span>
-            <div class="bar"><div [class]="'fill ' + level(g)" [style.width.%]="percent(g)"></div></div>
-            <span class="gauge-value">
-              @if (g.bytes) { {{ g.used | bytes }} / {{ g.limit | bytes }} } @else { {{ g.used | num }} / {{ g.limit | num }} }
-              @if (g.inverse) { <span class="muted">(threshold)</span> }
-            </span>
+
+  <div class="ov-grid two">
+    <!-- Health -->
+    <section class="card ov-card">
+      <header class="ov-head">
+        <app-status-icon [status]="worst()" />
+        <h3>Health</h3>
+        <span class="muted small">{{ health().length ? health().length + ' item' + (health().length > 1 ? 's' : '') + ' to look at' : '' }}</span>
+      </header>
+      @if (health().length) {
+        <ul class="health-list">
+          @for (h of health(); track h.text) {
+            <li>
+              <app-status-icon [status]="h.status" />
+              <div>
+                @if (h.link) {
+                  <a [routerLink]="h.link" [queryParams]="h.query">{{ h.text }}</a>
+                } @else {
+                  <span>{{ h.text }}</span>
+                }
+                @if (h.detail) { <div class="muted small mono">{{ h.detail }}</div> }
+              </div>
+            </li>
+          }
+        </ul>
+      } @else {
+        <p class="health-ok"><app-status-icon status="good" /> All systems normal</p>
+      }
+    </section>
+
+    <!-- Trend -->
+    <section class="card ov-card">
+      <header class="ov-head">
+        <h3>Trend</h3>
+        <span class="spacer"></span>
+        <div class="segmented" role="group" aria-label="Trend window">
+          @for (w of windows; track w.minutes) {
+            <button [class.active]="window() === w.minutes" (click)="setWindow(w.minutes)">{{ w.label }}</button>
+          }
+        </div>
+        <button class="small ghost" (click)="trendTable.set(!trendTable())">{{ trendTable() ? 'Chart' : 'Table' }}</button>
+      </header>
+      @if (trendTimes().length >= 2) {
+        @if (trendTable()) {
+          <table class="grid compact">
+            <thead><tr><th>Time</th><th class="num">All messages</th><th class="num">In error queues</th></tr></thead>
+            <tbody>
+              @for (s of trendTail(); track s.at) {
+                <tr><td>{{ s.at | relative }}</td><td class="num">{{ s.messages | num }}</td><td class="num">{{ s.errorMessages | num }}</td></tr>
+              }
+            </tbody>
+          </table>
+        } @else {
+          <app-trend-chart [times]="trendTimes()" [panels]="trendPanels()" />
+        }
+      } @else {
+        <p class="muted small">Collecting samples — the trend appears after a couple of minutes and covers up to 24 hours from when the server started.</p>
+      }
+    </section>
+  </div>
+
+  <!-- Failures -->
+  @if (errorQueues().length) {
+    <section class="card ov-card">
+      <header class="ov-head">
+        <h3>Failures</h3>
+        <span class="muted small">
+          {{ errorMessages() | num }} messages in {{ errorQueuesWithMessages().length }} error queue{{ errorQueuesWithMessages().length === 1 ? '' : 's' }}
+          @if (lastAnalysis(); as a) { · analysed {{ a.analyzedAt | relative }} by {{ a.analyzedBy }} }
+        </span>
+        <span class="spacer"></span>
+        @if (canAnalyze()) {
+          <button class="small" (click)="analyze()" [disabled]="analyzing()"
+            title="Reads the headers of the messages in the error queues (they are requeued) and groups them by endpoint and exception">
+            {{ analyzing() ? 'Analysing…' : lastAnalysis() ? 'Re-analyse' : 'Analyse' }}
+          </button>
+        }
+      </header>
+      @if (analyzeError(); as e) { <div class="banner error small">{{ e }}</div> }
+      @if (failureRows().length) {
+        <table class="grid compact failures-table">
+          <thead><tr><th>Endpoint</th><th>Exception</th><th class="num">Messages</th><th></th><th>Last failure</th><th>Error queue</th></tr></thead>
+          <tbody>
+            @for (f of failureRows(); track failureKey(f)) {
+              <tr class="clickable" [routerLink]="['/c', store.cluster(), 'queues', f.vhost, f.queue]">
+                <td class="mono">{{ f.endpoint ?? '–' }}</td>
+                <td [title]="(f.exceptionType) + (f.sampleMessage ? '\n' + f.sampleMessage : '')">
+                  <span class="mono">{{ shortType(f.exceptionType) }}</span>
+                  @if (f.sampleMessage) { <div class="muted small ellipsis">{{ f.sampleMessage }}</div> }
+                </td>
+                <td class="num">{{ f.count | num }}</td>
+                <td class="bar-cell"><div class="inline-bar"><span [style.width.%]="(f.count / failureMax()) * 100"></span></div></td>
+                <td class="nowrap">{{ f.lastFailure ? (f.lastFailure | relative) : '–' }}</td>
+                <td><span class="vhost">{{ f.vhost }}</span> <span class="mono small">{{ f.queue }}</span></td>
+              </tr>
+            }
+          </tbody>
+        </table>
+        <p class="muted small ov-foot">
+          Based on {{ analysisCoverage().read | num }} messages read.
+          @if (analysisCoverage().changed) { {{ analysisCoverage().changed }} queue(s) changed since — re-analyse for current numbers. }
+          @for (s of analysisCoverage().skipped; track s.vhost + s.queue) { <br />{{ s.vhost }}/{{ s.queue }}: {{ s.analysis?.skipped }} }
+        </p>
+      } @else {
+        <div class="chips">
+          @for (q of errorQueuesWithMessages().slice(0, 12); track q.vhost + q.queue) {
+            <a class="chip" [routerLink]="['/c', store.cluster(), 'queues', q.vhost, q.queue]"><span class="vhost">{{ q.vhost }}</span> {{ q.messages | num }}</a>
+          }
+          @if (!errorQueuesWithMessages().length) { <span class="muted small">No messages in error queues.</span> }
+        </div>
+        @if (canAnalyze()) {
+          <p class="muted small ov-foot">Analyse to group the failed messages by endpoint and exception.</p>
+        }
+      }
+    </section>
+  }
+
+  <div class="ov-grid two">
+    <!-- Top queues -->
+    <section class="card ov-card">
+      <header class="ov-head">
+        <h3>Queues with most messages</h3>
+        <span class="spacer"></span>
+        <a class="small" [routerLink]="['/c', store.cluster(), 'queues']" [queryParams]="{ withMessages: 1, sort: 'messages' }">Show all</a>
+      </header>
+      @if (topQueues().length) {
+        <table class="grid compact">
+          <tbody>
+            @for (q of topQueues(); track q.vhost + '/' + q.name) {
+              <tr class="clickable" [routerLink]="['/c', store.cluster(), 'queues', q.vhost, q.name]">
+                <td class="ellipsis-cell"><span class="vhost">{{ q.vhost }}</span> <span class="mono" [class.error-queue]="isError(q.name)">{{ q.name }}</span></td>
+                <td class="num">{{ q.messages | num }}</td>
+                <td class="bar-cell"><div class="inline-bar"><span [style.width.%]="((q.messages ?? 0) / topMax()) * 100"></span></div></td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      } @else {
+        <p class="muted small">No queue has messages.</p>
+      }
+    </section>
+
+    <!-- Stopped endpoints -->
+    <section class="card ov-card">
+      <header class="ov-head">
+        <h3>Stopped endpoints</h3>
+        <span class="muted small">messages waiting, no consumers</span>
+      </header>
+      @if (stopped().length) {
+        <table class="grid compact">
+          <tbody>
+            @for (q of stopped().slice(0, 8); track q.vhost + '/' + q.name) {
+              <tr class="clickable" [routerLink]="['/c', store.cluster(), 'queues', q.vhost, q.name]">
+                <td class="ellipsis-cell"><span class="vhost">{{ q.vhost }}</span> <span class="mono">{{ q.name }}</span></td>
+                <td class="num">{{ q.messages | num }}</td>
+                <td class="nowrap muted small">{{ q.type }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+        @if (stopped().length > 8) { <p class="muted small ov-foot">and {{ stopped().length - 8 }} more</p> }
+      } @else {
+        <p class="health-ok"><app-status-icon status="good" /> Every queue with messages has a consumer</p>
+      }
+    </section>
+  </div>
+
+  <!-- By vhost -->
+  @if (vhosts().length) {
+    <section class="card ov-card">
+      <header class="ov-head"><h3>By vhost</h3></header>
+      <table class="grid compact">
+        <thead><tr><th>Vhost</th><th class="num">Queues</th><th class="num">Messages</th><th></th><th class="num">In error queues</th><th class="num">Stopped endpoints</th></tr></thead>
+        <tbody>
+          @for (v of vhosts(); track v.vhost) {
+            <tr class="clickable" [routerLink]="['/c', store.cluster(), 'queues']" [queryParams]="{ vhost: v.vhost, withMessages: 1, sort: 'messages' }">
+              <td><span class="vhost">{{ v.vhost }}</span></td>
+              <td class="num">{{ v.queues | num }}</td>
+              <td class="num">{{ v.messages | num }}</td>
+              <td class="bar-cell"><div class="inline-bar"><span [style.width.%]="(v.messages / vhostMax()) * 100"></span></div></td>
+              <td class="num" [class.hot]="v.errors > 0">{{ v.errors | num }}</td>
+              <td class="num">
+                @if (v.stopped) { <span class="badge warn">{{ v.stopped }}</span> } @else { <span class="muted">0</span> }
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </section>
+  }
+
+  <!-- Nodes -->
+  @if (nodes(); as list) {
+    <section class="card ov-card">
+      <header class="ov-head">
+        <h3>Nodes</h3>
+        @if (overview(); as o) { <span class="muted small">{{ o.productName ?? 'RabbitMQ' }} {{ o.rabbitmqVersion }} · Erlang {{ o.erlangVersion }}</span> }
+      </header>
+      <div class="node-rows">
+        @for (n of list; track n.name) {
+          <div class="node-row">
+            <div class="node-name">
+              <app-status-icon [status]="n.running ? 'good' : 'critical'" />
+              <span class="mono">{{ n.name }}</span>
+              <span class="muted small">{{ n.processors }} CPU · up {{ n.uptime | uptime }}</span>
+            </div>
+            @for (g of gauges(n); track g.label) {
+              <div class="node-gauge" [title]="g.label">
+                <span class="muted small">{{ g.label }}</span>
+                <div class="bar"><div [class]="'fill ' + level(g)" [style.width.%]="percent(g)"></div></div>
+                <span class="small num">
+                  @if (g.bytes) { {{ g.used | bytes }} } @else { {{ g.used | num }} }
+                </span>
+              </div>
+            }
           </div>
         }
-      </article>
-    }
-  </section>
-}
-@if (!data() && !error()) {
-  <p class="muted">Loading…</p>
-}
+      </div>
+    </section>
+  }
+</div>

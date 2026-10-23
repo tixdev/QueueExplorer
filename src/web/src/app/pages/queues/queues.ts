@@ -1,6 +1,6 @@
 import { ScrollingModule } from '@angular/cdk/scrolling';
 import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
-import { RouterLink } from '@angular/router';
+import { ActivatedRoute, RouterLink } from '@angular/router';
 import { ClusterStore } from '../../core/cluster-store';
 import { Queue } from '../../core/models';
 import { NumberPipe, isNsbInfrastructure } from '../../shared/format';
@@ -16,6 +16,15 @@ type SortKey = 'name' | 'messages' | 'consumers';
 })
 export class QueuesPage {
   readonly store = inject(ClusterStore);
+
+  constructor() {
+    // Links (e.g. from the overview) can preset the filters: ?withMessages=1&sort=messages&vhost=…
+    const query = inject(ActivatedRoute).snapshot.queryParamMap;
+    if (query.has('withMessages')) this.onlyWithMessages.set(query.get('withMessages') === '1');
+    const sort = query.get('sort');
+    if (sort === 'name' || sort === 'messages' || sort === 'consumers') this.sort.set(sort);
+    if (query.has('vhost')) this.vhost.set(query.get('vhost') ?? '');
+  }
 
   readonly vhost = persistedSignal('queues.vhost', '');
   readonly search = persistedSignal('queues.search', '');

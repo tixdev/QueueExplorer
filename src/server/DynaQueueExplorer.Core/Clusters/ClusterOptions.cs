@@ -28,4 +28,16 @@ public sealed class ClusterOptions
 
     public required string Username { get; set; }
     public required string Password { get; set; }
+
+    /// <summary>Per-cluster overrides of the refresh settings (e.g. slower polling for production).</summary>
+    public RefreshOverrides? Refresh { get; set; }
+}
+
+/// <summary>Unset values fall back to the global <c>RabbitMq</c> settings.</summary>
+public sealed class RefreshOverrides
+{
+    public TimeSpan? ActiveRefreshInterval { get; set; }
+    public TimeSpan? StructureRefreshInterval { get; set; }
+    public TimeSpan? IdleAfter { get; set; }
+    public TimeSpan? IdleRefreshInterval { get; set; }
 }

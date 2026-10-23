@@ -352,7 +352,50 @@ export const Actions = {
   messagesMove: 'messages.move',
   messagesPublish: 'messages.publish',
   messagesExport: 'messages.export',
+  messagesDelete: 'messages.delete',
+  queuesPurge: 'queues.purge',
   stagingRead: 'staging.read',
   stagingWrite: 'staging.write',
   auditRead: 'audit.read',
 } as const;
+
+export interface TrendSample {
+  at: string;
+  messages: number;
+  ready: number;
+  unacked: number;
+  errorMessages: number;
+}
+
+export interface TrendResponse {
+  intervalSeconds: number;
+  samples: TrendSample[];
+}
+
+export interface FailureGroup {
+  endpoint?: string;
+  exceptionType: string;
+  count: number;
+  lastFailure?: string;
+  sampleMessage?: string;
+  handler?: string;
+}
+
+export interface QueueFailureAnalysis {
+  vhost: string;
+  queue: string;
+  analyzedAt: string;
+  analyzedBy: string;
+  depthWhenAnalyzed: number;
+  analyzed: number;
+  skipped?: string;
+  groups: FailureGroup[];
+}
+
+export interface ErrorQueueSummary {
+  vhost: string;
+  queue: string;
+  messages: number;
+  canAnalyze: boolean;
+  analysis?: QueueFailureAnalysis;
+}

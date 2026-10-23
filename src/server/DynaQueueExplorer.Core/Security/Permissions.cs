@@ -18,6 +18,10 @@ public static class Permissions
     /// <summary>Publish into a queue (checked on the destination of move, copy, retry and staging publish).</summary>
     public const string MessagesPublish = "messages.publish";
     public const string MessagesExport = "messages.export";
+    /// <summary>Delete selected messages of a queue.</summary>
+    public const string MessagesDelete = "messages.delete";
+    /// <summary>Remove every message of a queue at once.</summary>
+    public const string QueuesPurge = "queues.purge";
     public const string StagingRead = "staging.read";
     public const string StagingWrite = "staging.write";
     public const string AuditRead = "audit.read";
@@ -33,6 +37,8 @@ public static class Permissions
         [MessagesMove] = PermissionScope.Queue,
         [MessagesPublish] = PermissionScope.Queue,
         [MessagesExport] = PermissionScope.Queue,
+        [MessagesDelete] = PermissionScope.Queue,
+        [QueuesPurge] = PermissionScope.Queue,
         [StagingRead] = PermissionScope.Global,
         [StagingWrite] = PermissionScope.Global,
         [AuditRead] = PermissionScope.Global,

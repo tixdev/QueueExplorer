@@ -1,6 +1,7 @@
 import { ChangeDetectionStrategy, Component, computed, input, signal } from '@angular/core';
 import { BrowsedMessage } from '../core/models';
 import { BytesPipe, DateTimePipe, JsonValuePipe, RelativePipe, copyToClipboard } from './format';
+import { highlight } from './syntax';
 
 type Tab = 'nsb' | 'body' | 'headers' | 'properties';
 
@@ -28,6 +29,12 @@ export class MessageView {
   readonly propertyEntries = computed(() =>
     Object.entries(this.message().properties).sort(([a], [b]) => a.localeCompare(b)),
   );
+
+  /** Coloured runs of the body when its format was recognised (JSON/XML). */
+  readonly bodyTokens = computed(() => {
+    const body = this.message().body;
+    return highlight(body.text ?? '', body.format);
+  });
 
   readonly hexPreview = computed(() => {
     const base64 = this.message().body.base64;

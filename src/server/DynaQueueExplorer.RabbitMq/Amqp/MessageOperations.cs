@@ -63,6 +63,7 @@ public sealed class MessageOperations(AmqpConnections connections, IOptions<Rabb
         await commit(session.Selected.Select(h => h.Message).ToList());
         foreach (var held in session.Selected)
             await session.SettleAsync(held, remove);
+        await session.ReleaseOthersAsync();
         return session.Selected.Count;
     }
 
@@ -105,6 +106,7 @@ public sealed class MessageOperations(AmqpConnections connections, IOptions<Rabb
                 await session.SettleAsync(routed[i].Held, remove);
             }
         }
+        await session.ReleaseOthersAsync();
         return new TransferOutcome(session.Scanned, session.Selected.Count, published.Succeeded, failures);
     }
 
@@ -182,13 +184,15 @@ public sealed class MessageOperations(AmqpConnections connections, IOptions<Rabb
                 return session;
 
             await channel.BasicQosAsync(0, (ushort)Math.Min(limit, ushort.MaxValue), global: false, ct);
-            var deliveries = Channel.CreateUnbounded<BasicDeliverEventArgs>();
+            var deliveries = Channel.CreateUnbounded<(ulong DeliveryTag, RawMessage Message)>();
             var consumer = new AsyncEventingBasicConsumer(channel);
             consumer.ReceivedAsync += (_, args) =>
             {
-                // The body buffer is only valid during the callback.
-                deliveries.Writer.TryWrite(new BasicDeliverEventArgs(args.ConsumerTag, args.DeliveryTag, args.Redelivered,
-                    args.Exchange, args.RoutingKey, args.BasicProperties, args.Body.ToArray(), args.CancellationToken));
+                // Both the body and the properties (headers included) live in buffers that are reused once the callback
+                // returns: copy the whole message here, never later. Reading them afterwards mixes up messages.
+                var message = new RawMessage(args.Exchange, args.RoutingKey, args.Redelivered,
+                    AmqpProperties.FromAmqp(args.BasicProperties), args.Body.ToArray());
+                deliveries.Writer.TryWrite((args.DeliveryTag, message));
                 return Task.CompletedTask;
             };
             var consumerTag = await channel.BasicConsumeAsync(queue, autoAck: false, consumer, ct);
@@ -199,7 +203,7 @@ public sealed class MessageOperations(AmqpConnections connections, IOptions<Rabb
             {
                 using var idle = CancellationTokenSource.CreateLinkedTokenSource(ct);
                 idle.CancelAfter(DeliveryIdleTimeout);
-                BasicDeliverEventArgs delivery;
+                (ulong DeliveryTag, RawMessage Message) delivery;
                 try
                 {
                     delivery = await deliveries.Reader.ReadAsync(idle.Token);
@@ -209,9 +213,7 @@ public sealed class MessageOperations(AmqpConnections connections, IOptions<Rabb
                     break; // Other consumers took the rest, or the queue drained meanwhile.
                 }
 
-                var message = new RawMessage(delivery.Exchange, delivery.RoutingKey, delivery.Redelivered,
-                    AmqpProperties.FromAmqp(delivery.BasicProperties), delivery.Body.ToArray());
-                var held = new Held(delivery.DeliveryTag, message, KeyOf(message));
+                var held = new Held(delivery.DeliveryTag, delivery.Message, KeyOf(delivery.Message));
                 session.Scanned++;
                 if (wanted is null || wanted.Contains(held.Key))
                 {
@@ -228,8 +230,6 @@ public sealed class MessageOperations(AmqpConnections connections, IOptions<Rabb
             // Messages delivered after the loop ended are part of nothing: give them back right away.
             while (deliveries.Reader.TryRead(out var extra))
                 await channel.BasicNackAsync(extra.DeliveryTag, multiple: false, requeue: true, ct);
-            foreach (var other in session.Others)
-                await session.SettleAsync(other, remove: false);
             return session;
         }
         catch
@@ -247,6 +247,14 @@ public sealed class MessageOperations(AmqpConnections connections, IOptions<Rabb
         public List<Held> Selected { get; } = [];
         public List<Held> Others { get; } = [];
         public int Scanned { get; set; }
+
+        /// <summary>Puts back the messages that were read while looking for the selected ones.</summary>
+        public async Task ReleaseOthersAsync()
+        {
+            foreach (var other in Others)
+                await channel.BasicNackAsync(other.DeliveryTag, multiple: false, requeue: true);
+            Others.Clear();
+        }
 
         public async Task SettleAsync(Held held, bool remove)
         {

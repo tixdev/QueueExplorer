@@ -4,13 +4,38 @@ public sealed class RabbitMqOptions
 {
     public const string SectionName = "RabbitMq";
 
-    /// <summary>Snapshot refresh interval while someone has used the cluster recently.</summary>
+    /// <summary>
+    /// How often queue depths, consumers, node resources, overview and shovel status are refreshed while someone uses
+    /// the cluster. RabbitMQ recomputes its statistics every 5 s by default, so shorter intervals only add load.
+    /// </summary>
     public TimeSpan ActiveRefreshInterval { get; set; } = TimeSpan.FromSeconds(5);
 
-    /// <summary>Snapshot refresh interval when nobody has used the cluster for <see cref="IdleAfter"/>.</summary>
-    public TimeSpan IdleRefreshInterval { get; set; } = TimeSpan.FromSeconds(60);
+    /// <summary>
+    /// How often the structure that changes mostly with deployments (vhosts, exchanges, bindings, shovel definitions)
+    /// is re-read. A manual refresh always re-reads it.
+    /// </summary>
+    public TimeSpan StructureRefreshInterval { get; set; } = TimeSpan.FromSeconds(60);
 
+    /// <summary>A cluster nobody has used for this long is idle.</summary>
     public TimeSpan IdleAfter { get; set; } = TimeSpan.FromMinutes(2);
+
+    /// <summary>
+    /// Polling interval while idle; null (default) stops polling until someone uses the cluster again, and that first
+    /// request then waits for a fresh snapshot.
+    /// </summary>
+    public TimeSpan? IdleRefreshInterval { get; set; }
+
+    /// <summary>
+    /// How often message totals and error-queue depths are sampled for the overview trend (also while idle: two
+    /// small calls, or none when a fresh snapshot exists). Null disables the trend.
+    /// </summary>
+    public TimeSpan? TrendSampleInterval { get; set; } = TimeSpan.FromMinutes(1);
+
+    /// <summary>How much trend history is kept in memory.</summary>
+    public TimeSpan TrendRetention { get; set; } = TimeSpan.FromHours(24);
+
+    /// <summary>Upper bound of messages read per error queue by the failure analysis.</summary>
+    public int ErrorAnalysisMaxMessages { get; set; } = 1000;
 
     /// <summary>Upper bound of TCP connections towards each cluster's management API.</summary>
     public int MaxConnectionsPerCluster { get; set; } = 4;

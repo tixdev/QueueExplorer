@@ -8,6 +8,7 @@ namespace DynaQueueExplorer.RabbitMq.Management;
 [JsonSerializable(typeof(List<RmqVhost>))]
 [JsonSerializable(typeof(List<RmqQueue>))]
 [JsonSerializable(typeof(RmqQueue))]
+[JsonSerializable(typeof(RmqPage<RmqQueueDepth>))]
 [JsonSerializable(typeof(List<RmqConsumer>))]
 [JsonSerializable(typeof(List<RmqExchange>))]
 [JsonSerializable(typeof(List<RmqBinding>))]

@@ -150,7 +150,7 @@
         @if (m.body.format === 'binary') {
           <pre class="code">{{ hexPreview() }}</pre>
         } @else {
-          <pre class="code">{{ m.body.text }}</pre>
+          <pre class="code syntax">@for (t of bodyTokens(); track $index) {<span [class]="t.kind">{{ t.text }}</span>}</pre>
         }
       </section>
     }

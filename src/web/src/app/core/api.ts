@@ -6,6 +6,8 @@ import {
   BrowseResponse,
   BrowsedMessage,
   EditStagedMessageRequest,
+  ErrorQueueSummary,
+  TrendResponse,
   Me,
   OverviewResponse,
   PublishResult,
@@ -55,6 +57,18 @@ export class Api {
     return this.tagged(this.http.get<Shovel[]>(`${base(cluster)}/shovels`, { observe: 'response' }));
   }
 
+  trend(cluster: string, minutes: number): Observable<TrendResponse> {
+    return this.http.get<TrendResponse>(`${base(cluster)}/trend`, { params: { minutes } });
+  }
+
+  errorQueues(cluster: string): Observable<ErrorQueueSummary[]> {
+    return this.http.get<ErrorQueueSummary[]>(`${base(cluster)}/errors`);
+  }
+
+  analyzeErrors(cluster: string, vhost?: string, queue?: string): Observable<ErrorQueueSummary[]> {
+    return this.http.post<ErrorQueueSummary[]>(`${base(cluster)}/errors/analyze`, { vhost, queue });
+  }
+
   queue(cluster: string, vhost: string, name: string): Observable<QueueDetail> {
     return this.http.get<QueueDetail>(`${base(cluster)}/queue`, { params: { vhost, name } });
   }
@@ -74,6 +88,14 @@ export class Api {
   /** Downloads the selected messages of a queue as a .mqx file (the messages stay in the queue). */
   exportMessages(cluster: string, vhost: string, queue: string, keys?: string[], count?: number): Observable<void> {
     return this.download(this.http.post(`${base(cluster)}/messages/export`, { vhost, queue, keys, count }, { observe: 'response', responseType: 'blob' }));
+  }
+
+  deleteMessages(cluster: string, vhost: string, queue: string, keys?: string[], count?: number): Observable<{ deleted: number }> {
+    return this.http.post<{ deleted: number }>(`${base(cluster)}/messages/delete`, { vhost, queue, keys, count });
+  }
+
+  purgeQueue(cluster: string, vhost: string, queue: string, confirmName: string): Observable<{ messagesBefore?: number }> {
+    return this.http.post<{ messagesBefore?: number }>(`${base(cluster)}/queues/purge`, { vhost, queue, confirmName });
   }
 
   stage(cluster: string, vhost: string, queue: string, remove: boolean, keys?: string[], count?: number): Observable<StagingBatch> {

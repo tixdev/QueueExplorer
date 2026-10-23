@@ -155,3 +155,9 @@ public sealed record PropertiesEdit(
 
 /// <param name="Body">New body as UTF-8 text; null keeps the current body.</param>
 public sealed record EditStagedMessageRequest(PropertiesEdit Properties, List<HeaderEdit> Headers, string? Body = null);
+
+public sealed record PurgeRequest(string Vhost, string Queue, string ConfirmName);
+
+public sealed record DeleteResult(int Deleted);
+
+public sealed record PurgeResult(long? MessagesBefore);

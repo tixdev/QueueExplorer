@@ -38,6 +38,8 @@ public static class DevelopmentSeeder
                     new RoleGrant { Action = Permissions.MessagesMove, VhostPattern = "billing" },
                     new RoleGrant { Action = Permissions.MessagesPublish, VhostPattern = "sales" },
                     new RoleGrant { Action = Permissions.MessagesPublish, VhostPattern = "billing" },
+                    new RoleGrant { Action = Permissions.MessagesDelete, VhostPattern = "sales" },
+                    new RoleGrant { Action = Permissions.MessagesDelete, VhostPattern = "billing" },
                     new RoleGrant { Action = Permissions.StagingRead },
                     new RoleGrant { Action = Permissions.StagingWrite },
                 ],

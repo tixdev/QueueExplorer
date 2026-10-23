@@ -29,6 +29,7 @@ builder.Services.Configure<LocalUsersOptions>(o => builder.Configuration.GetSect
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<CurrentUser>();
 builder.Services.AddSingleton<ConditionalJson>();
+builder.Services.AddSingleton<FailureAnalysis>();
 
 builder.Services.ConfigureHttpJsonOptions(o =>
 {
@@ -99,6 +100,7 @@ app.UseMiddleware<RequireClientHeaderMiddleware>();
 app.MapAuthEndpoints();
 app.MapClusterEndpoints();
 app.MapMessageOperationEndpoints();
+app.MapOverviewEndpoints();
 app.MapStagingEndpoints();
 app.MapAuditEndpoints();
 // The default fallback skips paths whose last segment looks like a file name, but cluster routes contain queue
