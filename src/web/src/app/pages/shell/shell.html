@@ -2,14 +2,19 @@
   <header class="topbar">
     <a class="brand" routerLink="/"><img src="favicon.svg" alt="" width="22" height="22" /> DynaQueueExplorer</a>
     @if (me(); as user) {
+      <span class="broker-badge" [attr.data-broker]="store.broker()">{{ brokerLabel(store.broker()) }}</span>
       @if (user.clusters.length > 1) {
-        <select class="cluster-select" (change)="switchCluster($any($event.target).value)">
-          @for (c of user.clusters; track c.name) {
-            <option [value]="c.name" [selected]="c.name === cluster()">{{ c.name }}</option>
+        <select class="cluster-select" aria-label="Connection" [title]="current()?.description ?? ''" (change)="switchCluster($any($event.target).value)">
+          @for (g of connectionGroups(); track g.broker) {
+            <optgroup [label]="g.label">
+              @for (c of g.connections; track c.name) {
+                <option [value]="c.name" [selected]="c.name === cluster()">{{ c.name }}{{ c.description ? ' · ' + c.description : '' }}</option>
+              }
+            </optgroup>
           }
         </select>
       } @else {
-        <span class="cluster-name">{{ cluster() }}</span>
+        <span class="cluster-name" [title]="current()?.description ?? ''">{{ cluster() }}</span>
       }
       <nav class="nav">
         @if (can(A.overviewRead) || can(A.nodesRead)) {
@@ -18,10 +23,10 @@
         @if (can(A.queuesRead)) {
           <a [routerLink]="['/c', cluster(), 'queues']" routerLinkActive="active">Queues</a>
         }
-        @if (can(A.exchangesRead)) {
+        @if (can(A.exchangesRead) && !store.isIbmMq()) {
           <a [routerLink]="['/c', cluster(), 'exchanges']" routerLinkActive="active">Exchanges</a>
         }
-        @if (can(A.shovelsRead)) {
+        @if (can(A.shovelsRead) && !store.isIbmMq()) {
           <a [routerLink]="['/c', cluster(), 'shovels']" routerLinkActive="active">Shovels</a>
         }
         @if (canStaging()) {

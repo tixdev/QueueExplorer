@@ -1573,3 +1573,65 @@ pre.syntax .decl { color: var(--syn-comment); font-style: italic; }
   flex-direction: column;
   gap: 0.35rem;
 }
+
+/* Brokers */
+.broker-badge {
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.broker-badge[data-broker='ibmmq'] {
+  color: var(--accent);
+  background: var(--info-bg);
+  border-color: transparent;
+}
+
+/* IBM MQ */
+.mq-queues-table .row {
+  grid-template-columns: minmax(220px, 1fr) minmax(110px, 200px) 80px 110px 60px 60px 120px 100px 100px;
+}
+.depth-meter {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  vertical-align: middle;
+}
+.depth-meter .bar {
+  width: 56px;
+  height: 6px;
+}
+.depth-meter-text {
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  min-width: 2.6em;
+}
+.small-value {
+  font-size: 1rem;
+}
+.mq-chain {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  margin-bottom: 0.6rem;
+}
+.mq-chain .chip {
+  cursor: pointer;
+  font: inherit;
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  background: var(--surface);
+}
+.mq-chain .chip.static {
+  cursor: default;
+}
+.mq-details h4 {
+  margin: 0.9rem 0 0.35rem;
+}
+.mq-header {
+  scroll-margin-top: 0.5rem;
+}

@@ -1,3 +1,4 @@
+using DynaQueueExplorer.Api.Http;
 using DynaQueueExplorer.Api.Security;
 using DynaQueueExplorer.Core.Auditing;
 using DynaQueueExplorer.Core.Messages;
@@ -21,9 +22,9 @@ public static class OverviewEndpoints
     public static void MapOverviewEndpoints(this IEndpointRouteBuilder app)
     {
         var cluster = app.MapGroup("/api/clusters/{cluster}").RequireAuthorization();
-        cluster.MapGet("/trend", Trend);
-        cluster.MapGet("/errors", Errors);
-        cluster.MapPost("/errors/analyze", Analyze);
+        cluster.MapGet("/trend", Trend).RabbitMqOnly("The message trend");
+        cluster.MapGet("/errors", Errors).RabbitMqOnly("The failure summary");
+        cluster.MapPost("/errors/analyze", Analyze).RabbitMqOnly("Failure analysis");
     }
 
     private static async Task<IResult> Trend(string cluster, int? minutes, CurrentUser user, ClusterTrends trends, CancellationToken ct)

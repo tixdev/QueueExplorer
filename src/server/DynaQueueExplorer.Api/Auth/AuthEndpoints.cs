@@ -16,7 +16,7 @@ public static class AuthEndpoints
 
     public sealed record LoginRequest(string Username, string Password);
 
-    public sealed record ClusterAccess(string Name, string? Description, IReadOnlyList<string> Actions);
+    public sealed record ClusterAccess(string Name, string? Description, string Broker, IReadOnlyList<string> Actions);
 
     public sealed record MeResponse(
         string Username,
@@ -58,11 +58,11 @@ public static class AuthEndpoints
         });
 
         // Single bootstrap call: identity, visible clusters and the actions allowed on each.
-        app.MapGet("/api/me", async (CurrentUser user, DynaQueueExplorer.RabbitMq.Snapshots.ClusterClients clients, CancellationToken ct) =>
+        app.MapGet("/api/me", async (CurrentUser user, IOptions<DynaQueueExplorer.Core.Clusters.ClustersOptions> clusterOptions, CancellationToken ct) =>
         {
             var permissions = await user.GetPermissionsAsync(ct);
-            var clusters = clients.Clusters
-                .Select(c => new ClusterAccess(c.Name, c.Description, permissions.ActionsAnywhereIn(c.Name)))
+            var clusters = clusterOptions.Value.Items
+                .Select(c => new ClusterAccess(c.Name, c.Description, c.Broker, permissions.ActionsAnywhereIn(c.Name)))
                 .Where(c => c.Actions.Count > 0)
                 .ToList();
             var global = Permissions.All

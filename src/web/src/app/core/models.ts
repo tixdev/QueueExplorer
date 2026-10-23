@@ -1,8 +1,12 @@
 export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 
+export type BrokerId = 'rabbitmq' | 'ibmmq' | 'kafka';
+
+/** A connection the user can open: a RabbitMQ cluster or an IBM MQ queue manager. */
 export interface ClusterAccess {
   name: string;
   description?: string;
+  broker: BrokerId;
   actions: string[];
 }
 
@@ -66,10 +70,21 @@ export interface RmqNode {
   runQueue?: number;
 }
 
+export interface MqQueueManager {
+  name: string;
+  description?: string;
+  commandLevel?: number;
+  version?: string;
+  platform?: string;
+  deadLetterQueue?: string;
+}
+
 export interface OverviewResponse {
   snapshot: SnapshotInfo;
   overview?: Overview;
   nodes?: RmqNode[];
+  /** IBM MQ only. */
+  queueManager?: MqQueueManager;
 }
 
 export interface Queue {
@@ -87,6 +102,19 @@ export interface Queue {
   consumers?: number;
   arguments?: Record<string, JsonValue>;
   canBrowse: boolean;
+  // IBM MQ only: vhost is the queue manager, messages the current depth, unacked the uncommitted messages,
+  // consumers the open input count.
+  maxDepth?: number;
+  openOutput?: number;
+  inhibitGet?: boolean;
+  inhibitPut?: boolean;
+  /** Alias: target queue; remote: queue@qmgr via xmitq. */
+  target?: string;
+  description?: string;
+  lastPut?: string;
+  lastGet?: string;
+  oldestMessageAgeSeconds?: number;
+  transmission?: boolean;
 }
 
 export interface Exchange {
@@ -235,6 +263,49 @@ export interface BrowsedMessage {
   broker?: string;
   editedAt?: string;
   editedBy?: string;
+  ibmMq?: MqMessageView;
+  /** When the message was produced: NServiceBus TimeSent, else the AMQP timestamp, else the IBM MQ put time. */
+  sentAt?: string;
+}
+
+export interface MqProperty {
+  name: string;
+  value?: string;
+  type?: string;
+}
+
+export interface MqHeader {
+  /** MQ format name of the header (MQDEAD, MQHRF2, MQXMIT…). */
+  format: string;
+  title: string;
+  fields: MqProperty[];
+  folders: { name: string; xml: string; properties: MqProperty[] }[];
+}
+
+export interface PcfMessage {
+  type: number;
+  command: number;
+  commandName: string;
+  compCode: number;
+  reason: number;
+  reasonName: string;
+  last: boolean;
+  parameters: { id: number; name: string; value: string }[];
+}
+
+export interface MqMessageView {
+  messageIdHex: string;
+  messageIdText?: string;
+  correlationIdHex: string;
+  correlationIdText?: string;
+  mqmd: MqProperty[];
+  headers: MqHeader[];
+  bodyFormat: string;
+  bodyCcsid: string;
+  warning?: string;
+  pcf?: PcfMessage;
+  /** First bytes of a body decoded as text, for the hex view. */
+  rawBodyBase64?: string;
 }
 
 export interface HeaderEdit {

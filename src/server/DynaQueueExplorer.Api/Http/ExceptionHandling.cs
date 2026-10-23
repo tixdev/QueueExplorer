@@ -1,3 +1,4 @@
+using DynaQueueExplorer.IbmMq.Client;
 using DynaQueueExplorer.RabbitMq.Management;
 using RabbitMQ.Client.Exceptions;
 using Microsoft.AspNetCore.Diagnostics;
@@ -19,6 +20,9 @@ public sealed class ExplorerExceptionHandler(IProblemDetailsService problems) : 
                 $"The RabbitMQ account used by the explorer lacks a vhost permission (configure/write/read) for this operation: {e.ShutdownReason?.ReplyText}"),
             OperationInterruptedException e => (StatusCodes.Status502BadGateway, "RabbitMQ operation failed", e.ShutdownReason?.ReplyText ?? e.Message),
             BrokerUnreachableException e => (StatusCodes.Status502BadGateway, "RabbitMQ is unreachable over AMQP", e.InnerException?.Message ?? e.Message),
+            IbmMqException { IsNotAuthorized: true } e => (StatusCodes.Status502BadGateway, "IBM MQ refused the service account",
+                $"The IBM MQ account used by the explorer lacks an authority for this operation. {e.Message}"),
+            IbmMqException e => (StatusCodes.Status502BadGateway, "IBM MQ request failed", e.Message),
             KeyNotFoundException e => (StatusCodes.Status404NotFound, "Not found", e.Message),
             _ => (0, null, null),
         };

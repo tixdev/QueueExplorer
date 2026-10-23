@@ -4,7 +4,7 @@ import { ActivatedRoute, Router, RouterLink, RouterLinkActive, RouterOutlet } fr
 import { map } from 'rxjs';
 import { Auth } from '../../core/auth';
 import { ClusterStore } from '../../core/cluster-store';
-import { Actions } from '../../core/models';
+import { Actions, Brokers, brokerLabel } from '../../core/models';
 import { RelativePipe } from '../../shared/format';
 
 @Component({
@@ -21,7 +21,14 @@ export class Shell {
 
   readonly me = this.auth.me;
   readonly cluster = toSignal(inject(ActivatedRoute).paramMap.pipe(map((p) => p.get('cluster') ?? '')), { initialValue: '' });
-  readonly actions = computed(() => this.me()?.clusters.find((c) => c.name === this.cluster())?.actions ?? []);
+  readonly current = computed(() => this.me()?.clusters.find((c) => c.name === this.cluster()));
+  readonly actions = computed(() => this.current()?.actions ?? []);
+  /** Connections grouped by broker, in the order of the broker list. */
+  readonly connectionGroups = computed(() => {
+    const clusters = this.me()?.clusters ?? [];
+    return Brokers.map((b) => ({ broker: b.id, label: b.label, connections: clusters.filter((c) => c.broker === b.id) })).filter((g) => g.connections.length);
+  });
+  readonly brokerLabel = brokerLabel;
   readonly canAudit = computed(() => this.me()?.globalActions.includes(Actions.auditRead) ?? false);
   readonly canStaging = computed(() => this.me()?.globalActions.includes(Actions.stagingRead) ?? false);
   readonly checkedAtIso = computed(() => {

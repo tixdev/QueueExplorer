@@ -2,7 +2,7 @@ import { Injectable, computed, inject, signal } from '@angular/core';
 import { EMPTY, map } from 'rxjs';
 import { Api } from './api';
 import { Auth } from './auth';
-import { Actions, Binding, Exchange, Queue, Topology } from './models';
+import { Actions, Binding, BrokerId, Exchange, Queue, Topology } from './models';
 import { poll } from './polling';
 
 const SEP = '\u0000';
@@ -21,6 +21,8 @@ export class ClusterStore {
   private readonly auth = inject(Auth);
 
   readonly cluster = signal<string | null>(null);
+  readonly broker = computed<BrokerId>(() => this.auth.me()?.clusters.find((c) => c.name === this.cluster())?.broker ?? 'rabbitmq');
+  readonly isIbmMq = computed(() => this.broker() === 'ibmmq');
 
   // Each result carries the cluster it was loaded for, so switching cluster never shows stale data.
   private readonly topologyPoll = poll(() => {

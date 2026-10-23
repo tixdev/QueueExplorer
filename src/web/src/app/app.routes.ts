@@ -4,6 +4,7 @@ import { map } from 'rxjs';
 import { Auth } from './core/auth';
 import { authGuard } from './core/http';
 import { Actions } from './core/models';
+import { BrokerPage, brokerPages } from './pages/broker-page';
 
 /** "/" → first cluster the user can access. */
 const firstCluster: CanActivateFn = () => {
@@ -23,9 +24,11 @@ const clusterHome: CanActivateFn = (route) => {
   const auth = inject(Auth);
   const router = inject(Router);
   const cluster = route.parent?.paramMap.get('cluster') ?? '';
+  // IBM MQ has neither exchanges nor shovels.
+  const rabbit = auth.me()?.clusters.find((c) => c.name === cluster)?.broker !== 'ibmmq';
   const page = auth.can(cluster, Actions.overviewRead) || auth.can(cluster, Actions.nodesRead)
     ? 'overview'
-    : auth.can(cluster, Actions.queuesRead)
+    : auth.can(cluster, Actions.queuesRead) || !rabbit
       ? 'queues'
       : auth.can(cluster, Actions.exchangesRead)
         ? 'exchanges'
@@ -47,11 +50,40 @@ export const routes: Routes = [
     loadComponent: () => import('./pages/shell/shell').then((m) => m.Shell),
     children: [
       { path: '', pathMatch: 'full', canActivate: [clusterHome], children: [] },
-      { path: 'overview', loadComponent: () => import('./pages/overview/overview').then((m) => m.OverviewPage) },
-      { path: 'queues', loadComponent: () => import('./pages/queues/queues').then((m) => m.QueuesPage) },
-      { path: 'queues/:vhost/:name', loadComponent: () => import('./pages/queue/queue').then((m) => m.QueuePage) },
-      { path: 'exchanges', loadComponent: () => import('./pages/exchanges/exchanges').then((m) => m.ExchangesPage) },
-      { path: 'shovels', loadComponent: () => import('./pages/shovels/shovels').then((m) => m.ShovelsPage) },
+      {
+        path: 'overview',
+        component: BrokerPage,
+        data: brokerPages({
+          rabbitmq: () => import('./pages/overview/overview').then((m) => m.OverviewPage),
+          ibmmq: () => import('./pages/mq/mq-overview').then((m) => m.MqOverviewPage),
+        }),
+      },
+      {
+        path: 'queues',
+        component: BrokerPage,
+        data: brokerPages({
+          rabbitmq: () => import('./pages/queues/queues').then((m) => m.QueuesPage),
+          ibmmq: () => import('./pages/mq/mq-queues').then((m) => m.MqQueuesPage),
+        }),
+      },
+      {
+        path: 'queues/:vhost/:name',
+        component: BrokerPage,
+        data: brokerPages({
+          rabbitmq: () => import('./pages/queue/queue').then((m) => m.QueuePage),
+          ibmmq: () => import('./pages/mq/mq-queue').then((m) => m.MqQueuePage),
+        }),
+      },
+      {
+        path: 'exchanges',
+        component: BrokerPage,
+        data: brokerPages({ rabbitmq: () => import('./pages/exchanges/exchanges').then((m) => m.ExchangesPage) }),
+      },
+      {
+        path: 'shovels',
+        component: BrokerPage,
+        data: brokerPages({ rabbitmq: () => import('./pages/shovels/shovels').then((m) => m.ShovelsPage) }),
+      },
       { path: 'staging', loadComponent: () => import('./pages/staging/staging').then((m) => m.StagingPage) },
       { path: 'audit', loadComponent: () => import('./pages/audit/audit').then((m) => m.AuditPage) },
     ],

@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, input, model } from '@angular/core';
-import { BrowsedMessage } from '../core/models';
+import { BrowsedMessage, MqMessageView } from '../core/models';
 import { BytesPipe, DateTimePipe, RelativePipe } from './format';
 
 /** Message list with multi-selection (by message key), shared by the queue and staging pages. */
@@ -20,13 +20,17 @@ import { BytesPipe, DateTimePipe, RelativePipe } from './format';
             <div class="message-body">
               <div class="message-title">
                 <span>{{ title(m) }}</span>
-                @if (m.nServiceBus?.timeSent; as t) { <span class="muted" [title]="t | datetime">{{ t | relative }}</span> }
+                @if (m.sentAt; as t) { <time class="muted nowrap" [attr.datetime]="t" [title]="t | relative">{{ t | datetime }}</time> }
               </div>
               <div class="message-subtitle">{{ subtitle(m) }}</div>
               <div class="message-meta">
                 <span>#{{ m.index + 1 }}</span>
                 <span>{{ m.payloadBytes | bytes }}</span>
-                @if (!m.nServiceBus) { <span class="badge muted">not NSB</span> }
+                @if (m.ibmMq; as mq) {
+                  <span class="badge muted" title="MQ format">{{ mq.headers[0]?.format?.trim() ?? mq.bodyFormat }}</span>
+                } @else if (!m.nServiceBus) {
+                  <span class="badge muted">not NSB</span>
+                }
                 @if (m.discarded) { <span class="badge muted">discarded</span> }
                 @if (m.editedAt) { <span class="badge warn" [title]="'edited by ' + m.editedBy">edited</span> }
                 @if (m.lastPublishedTo) { <span class="badge ok" [title]="m.lastPublishedTo">published</span> }
@@ -66,7 +70,7 @@ export class MessageList {
   }
 
   title(m: BrowsedMessage): string {
-    return m.nServiceBus?.messageTypes[0]?.name ?? (m.body.format === 'binary' ? 'Binary' : (m.contentType ?? 'Message'));
+    return m.nServiceBus?.messageTypes[0]?.name ?? (m.ibmMq ? mqTitle(m.ibmMq) : undefined) ?? (m.body.format === 'binary' ? 'Binary' : (m.contentType ?? 'Message'));
   }
 
   subtitle(m: BrowsedMessage): string {
@@ -75,4 +79,11 @@ export class MessageList {
     if (n) return n.originatingEndpoint ?? '';
     return m.body.text?.slice(0, 80) ?? '';
   }
+}
+
+/** Dead letters by their reason (e.g. MQRC_Q_FULL), PCF messages by their command; otherwise the generic title. */
+function mqTitle(v: MqMessageView): string | undefined {
+  const reason = v.headers.find((h) => h.format.trim() === 'MQDEAD')?.fields.find((f) => f.name === 'Reason')?.value;
+  if (reason) return 'Dead letter · ' + (reason.split(' ')[1] ?? reason);
+  return v.pcf?.commandName;
 }

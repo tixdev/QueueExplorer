@@ -4,11 +4,16 @@
     @if (nsb()) {
       <button [class.active]="tab() === 'nsb'" (click)="selectTab('nsb')">NServiceBus</button>
     }
+    @if (mq()) {
+      <button [class.active]="tab() === 'ibmmq'" (click)="selectTab('ibmmq')">IBM MQ</button>
+    }
     <button [class.active]="tab() === 'body'" (click)="selectTab('body')">Body</button>
     <button [class.active]="tab() === 'headers'" (click)="selectTab('headers')">
       Header <span class="count">{{ headerEntries().length }}</span>
     </button>
-    <button [class.active]="tab() === 'properties'" (click)="selectTab('properties')">Properties</button>
+    @if (!mq()) {
+      <button [class.active]="tab() === 'properties'" (click)="selectTab('properties')">Properties</button>
+    }
   </nav>
 
   @switch (tab()) {
@@ -135,6 +140,9 @@
         }
       </section>
     }
+    @case ('ibmmq') {
+      <app-mq-message-details [view]="mq()!" />
+    }
     @case ('body') {
       <section>
         <div class="body-toolbar">
@@ -142,12 +150,18 @@
           <span class="muted">{{ m.payloadBytes | bytes }}</span>
           @if (m.contentType) { <span class="muted">{{ m.contentType }}</span> }
           @if (m.body.truncated) { <span class="badge warn">truncated</span> }
+          @if (mq(); as v) {
+            <span class="muted" [title]="'Body format ' + v.bodyFormat">decoded from CCSID {{ v.bodyCcsid }}</span>
+          }
           <span class="spacer"></span>
+          @if (mq()?.rawBodyBase64) {
+            <button class="small ghost" (click)="showHex.set(!showHex())">{{ showHex() ? 'Text' : 'Hex' }}</button>
+          }
           <button class="small" (click)="copy('body', m.body.text ?? m.body.base64)">
             {{ copied() === 'body' ? 'Copied' : 'Copy' }}
           </button>
         </div>
-        @if (m.body.format === 'binary') {
+        @if (m.body.format === 'binary' || (showHex() && mq()?.rawBodyBase64)) {
           <pre class="code">{{ hexPreview() }}</pre>
         } @else {
           <pre class="code syntax">@for (t of bodyTokens(); track $index) {<span [class]="t.kind">{{ t.text }}</span>}</pre>

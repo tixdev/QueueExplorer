@@ -23,7 +23,8 @@ public sealed class ClusterClients : IDisposable
     internal ClusterClients(IOptions<ClustersOptions> clusters, IOptions<RabbitMqOptions> options, IHostEnvironment environment,
         Func<ClusterOptions, HttpMessageHandler>? handlerOverride)
     {
-        _clusters = clusters.Value.Items.ToDictionary(c => c.Name, c =>
+        // RabbitMQ clusters only; IBM MQ queue managers have their own connections.
+        _clusters = clusters.Value.Items.Where(c => c.Broker == "rabbitmq").ToDictionary(c => c.Name, c =>
         {
             var handler = new SocketsHttpHandler
             {
@@ -35,7 +36,8 @@ public sealed class ClusterClients : IDisposable
             };
             if (ClusterTls.CreateValidator(c, environment.ContentRootPath) is { } validator)
                 handler.SslOptions.RemoteCertificateValidationCallback = validator;
-            var baseAddress = c.ManagementUrl.ToString().EndsWith('/') ? c.ManagementUrl : new Uri(c.ManagementUrl + "/");
+            var managementUrl = c.ManagementUrl ?? throw new InvalidOperationException($"Cluster '{c.Name}' has no ManagementUrl.");
+            var baseAddress = managementUrl.ToString().EndsWith('/') ? managementUrl : new Uri(managementUrl + "/");
             var http = new HttpClient(handlerOverride?.Invoke(c) ?? handler) { BaseAddress = baseAddress, Timeout = options.Value.RequestTimeout };
             return (http, new RabbitMqManagementClient(http, c), c);
         }, StringComparer.Ordinal);

@@ -6,6 +6,7 @@ using DynaQueueExplorer.Api.Auth;
 using DynaQueueExplorer.Api.Endpoints;
 using DynaQueueExplorer.Api.Http;
 using DynaQueueExplorer.Api.Security;
+using DynaQueueExplorer.IbmMq;
 using DynaQueueExplorer.Infrastructure;
 using DynaQueueExplorer.Infrastructure.Persistence;
 using DynaQueueExplorer.RabbitMq;
@@ -22,6 +23,7 @@ builder.Configuration.AddEnvironmentVariables();
 
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddRabbitMqExplorer(builder.Configuration);
+builder.Services.AddIbmMqExplorer(builder.Configuration);
 builder.Services.AddExplorerPersistence(builder.Configuration.GetConnectionString("Explorer")
                                         ?? throw new InvalidOperationException("Missing connection string 'Explorer'."));
 

@@ -1,0 +1,113 @@
+<div class="queue-page">
+  <nav class="breadcrumb">
+    <a [routerLink]="['/c', store.cluster(), 'queues']">Queues</a> <span>›</span> <span class="vhost" title="Queue manager">{{ qmgr() }}</span> <span>›</span>
+    <strong class="mono">{{ name() }}</strong>
+    @if (queue(); as q) {
+      <span class="badge muted">{{ typeLabels[q.type ?? ''] ?? q.type }}</span>
+      @if (q.description) { <span class="muted">{{ q.description }}</span> }
+    }
+  </nav>
+
+  @if (queue(); as q) {
+    @if (q.type === 'alias' && q.target) {
+      <p class="muted">
+        Alias of
+        @if (aliasTarget()) {
+          <a class="mono" [routerLink]="['/c', store.cluster(), 'queues', qmgr(), q.target]">{{ q.target }}</a>
+        } @else {
+          <span class="mono">{{ q.target }}</span>
+        }
+        — browsing reads the messages of the target queue.
+      </p>
+    }
+    @if (q.type === 'remote') {
+      <p class="muted">
+        Remote queue definition: messages put here go to <span class="mono">{{ q.target }}</span>.
+        @if (transmissionQueue(); as x) {
+          Messages that have not left yet wait on
+          <a class="mono" [routerLink]="['/c', store.cluster(), 'queues', qmgr(), x.name]">{{ x.name }}</a> ({{ x.messages | num }}).
+        }
+      </p>
+    }
+
+    @if (q.type !== 'alias' && q.type !== 'remote') {
+      <section class="stats compact">
+        <div class="stat">
+          <span class="stat-label">Depth</span>
+          <span class="stat-value">{{ q.messages | num }}</span>
+          <span class="muted">of {{ q.maxDepth | num }} max · <app-depth-meter [queue]="q" /></span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Open handles</span>
+          <span class="stat-value">{{ q.consumers | num }} / {{ q.openOutput | num }}</span>
+          <span class="muted">input (readers) / output (writers)</span>
+        </div>
+        @if (q.unacked !== undefined && q.unacked !== null) {
+          <div class="stat">
+            <span class="stat-label">Uncommitted</span>
+            <span class="stat-value">{{ q.unacked | num }}</span>
+            <span class="muted">in open units of work</span>
+          </div>
+        }
+        <div class="stat">
+          <span class="stat-label">Last put / last get</span>
+          <span class="stat-value small-value">
+            <span [title]="q.lastPut | datetime">{{ q.lastPut ? (q.lastPut | relative: now()) : '–' }}</span> /
+            <span [title]="q.lastGet | datetime">{{ q.lastGet ? (q.lastGet | relative: now()) : '–' }}</span>
+          </span>
+          <span class="muted">
+            @if (q.oldestMessageAgeSeconds !== undefined && q.oldestMessageAgeSeconds !== null) {
+              oldest message {{ oldestAge(q.oldestMessageAgeSeconds) }}
+            } @else {
+              last put/get and oldest message age need queue monitoring (MONQ)
+            }
+          </span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Get / put</span>
+          <span class="stat-value small-value">
+            <span [class.hot]="q.inhibitGet">{{ q.inhibitGet ? 'GET inhibited' : 'GET allowed' }}</span> ·
+            <span [class.warn-text]="q.inhibitPut">{{ q.inhibitPut ? 'PUT inhibited' : 'PUT allowed' }}</span>
+          </span>
+          <span class="muted">{{ q.transmission ? 'transmission queue' : 'normal usage' }}</span>
+        </div>
+      </section>
+    }
+
+    <section class="browse">
+      <div class="toolbar">
+        @if (q.canBrowse) {
+          <label>Messages <input type="number" min="1" max="200" [value]="count()" (change)="count.set(+$any($event.target).value)" class="narrow" /></label>
+          <button class="primary" (click)="browse()" [disabled]="browsing()">{{ browsing() ? 'Reading…' : 'Browse' }}</button>
+          <span class="badge ok" title="IBM MQ browse reads messages without removing or changing them">Browsing does not change the queue</span>
+          @if (result()) {
+            <input class="search" type="search" placeholder="Filter by body, format, message id…" [value]="filter()" (input)="filter.set($any($event.target).value)" />
+            <span class="muted">{{ messages().length }} of {{ result()!.messages.length }} read · {{ result()!.queueDepth | num }} in queue</span>
+          }
+        } @else if (q.type === 'remote' || q.type === 'model') {
+          <span class="muted">A {{ typeLabels[q.type] }} queue definition holds no messages.</span>
+        } @else {
+          <span class="muted">You are not allowed to browse the messages of this queue.</span>
+        }
+      </div>
+
+      @if (browseError(); as e) {
+        <div class="banner error">{{ e }}</div>
+      }
+      @if (result(); as r) {
+        <div class="messages-split">
+          <app-message-list [messages]="messages()" [(selectedKeys)]="selectedKeys" [(current)]="selected" />
+          <div class="message-detail">
+            @if (selected(); as m) {
+              <app-message-view [message]="m" />
+            }
+          </div>
+        </div>
+      }
+    </section>
+  } @else if (store.topology()) {
+    <p class="muted">Queue not found or not visible.</p>
+  } @else {
+    <p class="muted">Loading…</p>
+  }
+</div>

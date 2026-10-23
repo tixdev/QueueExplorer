@@ -1,0 +1,53 @@
+<div class="list-page">
+  <div class="toolbar">
+    <select (change)="type.set($any($event.target).value)" aria-label="Queue type">
+      <option value="" [selected]="!type()">All types</option>
+      @for (t of types; track t) {
+        <option [value]="t" [selected]="t === type()">{{ typeLabels[t] }}</option>
+      }
+    </select>
+    <input class="search" type="search" placeholder="Search queues, targets, descriptions…" [value]="search()" (input)="search.set($any($event.target).value)" />
+    <label class="check"><input type="checkbox" [checked]="hideSystem()" (change)="hideSystem.set($any($event.target).checked)" /> Hide SYSTEM.*</label>
+    <label class="check"><input type="checkbox" [checked]="onlyWithMessages()" (change)="onlyWithMessages.set($any($event.target).checked)" /> Only with messages</label>
+    <span class="spacer"></span>
+    <span class="muted">{{ totals().count | num }} queues · {{ totals().messages | num }} messages</span>
+  </div>
+
+  <div class="table mq-queues-table">
+    <div class="thead row">
+      <button class="th sortable" [class.sorted]="sort() === 'name'" (click)="sort.set('name')">Queue</button>
+      <span class="th">Type</span>
+      <button class="th num sortable" [class.sorted]="sort() === 'depth'" (click)="sort.set('depth')">Depth</button>
+      <button class="th sortable" [class.sorted]="sort() === 'fill'" (click)="sort.set('fill')" title="Current depth against max depth">Fill</button>
+      <span class="th num" title="Open input count (IPPROCS): handles reading the queue">Input</span>
+      <span class="th num" title="Open output count (OPPROCS): handles writing to the queue">Output</span>
+      <span class="th">Flags</span>
+      <button class="th sortable" [class.sorted]="sort() === 'lastPut'" (click)="sort.set('lastPut')" title="Needs queue monitoring (MONQ) on the queue manager or the queue">Last put</button>
+      <span class="th" title="Needs queue monitoring (MONQ) on the queue manager or the queue">Last get</span>
+    </div>
+    @if (store.loading()) {
+      <p class="muted pad">Loading queues…</p>
+    }
+    <cdk-virtual-scroll-viewport itemSize="34" class="viewport">
+      <a *cdkVirtualFor="let q of queues(); trackBy: trackQueue" class="row" [routerLink]="['/c', store.cluster(), 'queues', q.vhost, q.name]">
+        <span class="cell name" [title]="q.description || q.name">
+          <span class="mono">{{ q.name }}</span>
+        </span>
+        <span class="cell" [title]="q.target ? typeLabels[q.type ?? ''] + ' → ' + q.target : ''">
+          <span class="badge muted">{{ typeLabels[q.type ?? ''] ?? q.type }}</span>
+          @if (q.target) { <span class="muted small mono"> → {{ q.target }}</span> }
+        </span>
+        <span class="cell num">{{ q.messages | num }}</span>
+        <span class="cell"><app-depth-meter [queue]="q" /></span>
+        <span class="cell num" [class.warn-text]="unread(q)" [title]="unread(q) ? 'Messages waiting and nobody has the queue open for input' : ''">{{ q.consumers | num }}</span>
+        <span class="cell num">{{ q.openOutput | num }}</span>
+        <span class="cell">
+          @if (q.inhibitGet) { <span class="badge danger" title="Get inhibited: applications cannot read">GET off</span> }
+          @if (q.inhibitPut) { <span class="badge warn" title="Put inhibited: applications cannot write">PUT off</span> }
+        </span>
+        <span class="cell small" [title]="q.lastPut | datetime">{{ q.lastPut ? (q.lastPut | relative: now()) : '–' }}</span>
+        <span class="cell small" [title]="q.lastGet | datetime">{{ q.lastGet ? (q.lastGet | relative: now()) : '–' }}</span>
+      </a>
+    </cdk-virtual-scroll-viewport>
+  </div>
+</div>

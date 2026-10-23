@@ -26,6 +26,29 @@ services:
       timeout: 10s
       retries: 30
 
+  # IBM MQ for developers (amd64 only: runs under emulation on Apple silicon). TLS on DEV.APP.SVRCONN with the same
+  # local CA as RabbitMQ; the explorer connects as the "app" user.
+  ibmmq:
+    image: icr.io/ibm-messaging/mq:9.4.4.0-r1
+    platform: linux/amd64
+    environment:
+      LICENSE: accept
+      MQ_QMGR_NAME: QM1
+      MQ_APP_USER: app
+      MQ_APP_PASSWORD: "Dqe_Mq_Dev_2026!"
+      MQ_ADMIN_USER: admin
+      MQ_ADMIN_PASSWORD: "Dqe_Mq_Admin_2026!"
+      MQ_ENABLE_METRICS: "false"
+    ports:
+      - "1414:1414"
+      - "9443:9443"
+    volumes:
+      - ./docker/ibmmq/20-dqe.mqsc:/etc/mqm/20-dqe.mqsc:ro
+      - ./docker/rabbitmq/certs/server.key:/etc/mqm/pki/keys/default/tls.key:ro
+      - ./docker/rabbitmq/certs/server.pem:/etc/mqm/pki/keys/default/tls.crt:ro
+      - ./docker/rabbitmq/certs/ca.pem:/etc/mqm/pki/keys/default/ca.crt:ro
+      - ibmmq-data:/mnt/mqm
+
   sqlserver:
     image: mcr.microsoft.com/mssql/server:2022-latest
     platform: linux/amd64
@@ -39,5 +62,6 @@ services:
       - sqlserver-data:/var/opt/mssql
 
 volumes:
+  ibmmq-data:
   rabbitmq-data:
   sqlserver-data:

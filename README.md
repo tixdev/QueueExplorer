@@ -1,10 +1,11 @@
 # DynaQueueExplorer
 
-A web-based explorer for **RabbitMQ**, built for teams running **NServiceBus**. It replaces desktop tools such as
+A web-based explorer for **RabbitMQ** and **IBM MQ**, built for teams running **NServiceBus**. It replaces desktop tools such as
 QueueExplorer (Windows-only, slow on large brokers) with a shared, fast web application that:
 
-- shows the state of one or more RabbitMQ clusters — nodes, queues, exchanges, bindings, shovels — without
-  requiring users to be RabbitMQ administrators;
+- shows the state of one or more RabbitMQ clusters — nodes, queues, exchanges, bindings, shovels — and IBM MQ queue
+  managers — queues, depths, open handles, dead-letter and transmission queues — without requiring users to be
+  broker administrators;
 - recognises NServiceBus messages and displays them in a structured way (message types, endpoints, failure details);
 - moves, copies, retries, exports and imports messages safely;
 - parks messages in a **staging area**, shared across brokers, to inspect and edit them before deciding where to
@@ -12,7 +13,8 @@ QueueExplorer (Windows-only, slow on large brokers) with a shared, fast web appl
 - applies its own **role-based access control** on top of a single privileged service account, and records every
   sensitive operation in an **audit log**.
 
-IBM MQ and Kafka support are planned; the code is organised so that other brokers can be added next to RabbitMQ.
+IBM MQ is supported read-only for now (overview, queues, browse with full decoding); moving, copying and staging IBM MQ
+messages, and Kafka, are planned. Each broker plugs in next to the others: see [docs/ux-multi-broker.md](docs/ux-multi-broker.md).
 
 ---
 
@@ -59,6 +61,27 @@ IBM MQ and Kafka support are planned; the code is organised so that other broker
   - all headers grouped (failure, exception data, saga, diagnostics, ServiceControl, NServiceBus, other).
 - **Body viewer**: JSON and XML are pretty-printed and **syntax-coloured** (keys, strings, numbers, literals; tags,
   attributes, values), binary payloads get a hex dump; copy to clipboard.
+- The message list shows when each message was **produced**, as date and time in the browser's time zone (relative
+  time on hover): NServiceBus `TimeSent`, else the AMQP `timestamp` property, else the IBM MQ put date/time.
+
+### IBM MQ
+- The connection picker groups connections by broker and a badge always shows which broker is open. For IBM MQ the
+  *vhost* of the URL and of RBAC grants is the **queue manager name**; Exchanges and Shovels are not shown.
+- **Overview**: total depth, messages on the **dead-letter queue**, queues at ≥ 80 % of max depth, queues with messages
+  and **no open input handle** (nobody reading), **transmission queues with a backlog** (sender channel probably down),
+  queue manager version, command level and platform. Health lists full queues, get/put inhibited queues in use, the DLQ
+  and the limits of the service account.
+- **Queues**: type (alias → target, remote → `queue@qmgr via xmitq`, transmission, model), depth with a **fill meter**
+  against max depth, open input/output counts, GET/PUT inhibited flags, last put / last get; `SYSTEM.*` hidden by
+  default. The explorer's own PCF reply queues (`DQE.PCF.*`) are never listed.
+- **Browse is a real MQ browse**: it does not change the queue, so no confirmation is needed.
+- **Message viewer**, *IBM MQ* tab: the **header chain** (e.g. `MQDEAD → MQHRF2 → MQSTR`), the MQMD (format, CCSID
+  with its code page, encoding, persistence, put application and time, reply-to, backout count, expiry), MsgId and
+  CorrelId in hex with their printable text, the **dead-letter header** (reason as code, constant and meaning,
+  original destination), the transmission queue header, **RFH2 folders** (`mcd`, `jms`, `usr` properties…) and **PCF**
+  messages as a parameter table. The body is decoded with the CCSID of the last header — UTF-8, Latin-1/Windows code
+  pages and **EBCDIC** (500, 1140–1149 with euro, 037, 273, 280…) — and can be switched to a **hex view** to check a
+  doubtful decoding.
 
 ### Move, copy, retry
 All operations work on the **selected messages** or, if none is selected, on the **first N messages** of the queue.
@@ -151,12 +174,25 @@ Measured locally (622 queues, 1567 exchanges, 4174 bindings): snapshot refresh ~
 
 ---
 
+## Things to know about IBM MQ
+
+- The explorer connects as an MQ client (TCP, optionally TLS) and lists queues with **PCF commands**, reading every
+  queue in one exchange per refresh. Without PCF rights it falls back to the queues listed in `Clusters[].Queues`.
+- **Last put / last get** and the oldest message age only exist when **queue monitoring** is on (`MONQ` on the queue
+  manager or the queue). MQ reports those times in the queue manager's local time without naming the time zone: set
+  `Clusters[].TimeZone` (IANA id, e.g. `Europe/Rome`) when it is not UTC.
+- TLS with the IBM MQ .NET client 10.0.1: use an explicit **TLS 1.2 CipherSpec** (e.g.
+  `ECDHE_RSA_AES_256_GCM_SHA384`); `ANY_TLS12_OR_HIGHER` and TLS 1.3 CipherSpecs do not work on macOS. With a
+  certificate file the IBM client accepts any CA and does not check the host name, so the explorer first verifies the
+  server certificate itself (against `CaCertificatePath` or the machine's trust store, host name included).
+
 ## Architecture
 
 ```
 src/server/
   DynaQueueExplorer.Core            RBAC model, cluster options, audit contract, message keys, body formatting
   DynaQueueExplorer.RabbitMq        management API client, snapshots, AMQP connections, move/copy/publish, .mqx format
+  DynaQueueExplorer.IbmMq           IBM MQ client connections, PCF snapshots, browse, header chain and CCSID decoding
   DynaQueueExplorer.NServiceBus     NServiceBus message recognition and decoding
   DynaQueueExplorer.Infrastructure  EF Core / SQL Server: roles, grants, assignments, audit, staging
   DynaQueueExplorer.Api             ASP.NET Core minimal API (.NET 10); serves the SPA
@@ -164,7 +200,8 @@ src/web/                           Angular 22 (zoneless, signals, CDK virtual sc
 tests/DynaQueueExplorer.Tests       xUnit, including fixtures captured from real NServiceBus 10 failures
 tools/perf-env/                    generators for an NServiceBus-like RabbitMQ topology and sample messages
 tools/NsbSimulator/                real NServiceBus 10 endpoints that fail in different ways
-docker-compose.yml                 RabbitMQ 4.1 (management + shovel, TLS) and SQL Server 2022
+tools/IbmMqSeeder/                 fills the local IBM MQ queue manager with messages in every supported format
+docker-compose.yml                 RabbitMQ 4.1 (management + shovel, TLS), SQL Server 2022, IBM MQ 9.4 (QM1, TLS)
 ```
 
 NuGet versions are managed centrally in `Directory.Packages.props` (CPM, transitive pinning); common build settings
@@ -177,11 +214,16 @@ tools/perf-env/generate_certs.sh                    # local CA + server certific
 python3 -I tools/perf-env/generate_definitions.py   # 10 vhosts × ~210 queues/exchanges, ~3.5k bindings, shovels, policies
 docker compose up -d
 python3 -I tools/perf-env/seed_messages.py          # ~2.4k NServiceBus-shaped messages (error, audit, endpoints)
+dotnet run --project tools/IbmMqSeeder              # IBM MQ test messages: JSON, JMS/RFH2, EBCDIC, binary, DLQ, XMIT, PCF
 
 cd src/web && npm ci && npx ng build && cd -        # builds the SPA into the API's wwwroot
 dotnet run --project src/server/DynaQueueExplorer.Api --launch-profile http
 # → http://localhost:5044
 ```
+
+The IBM MQ image (`icr.io/ibm-messaging/mq`, amd64) runs emulated on Apple silicon and takes a minute to start. Its
+setup is in `docker/ibmmq/20-dqe.mqsc`: TLS on `DEV.APP.SVRCONN`, queue monitoring on, test queues, and
+`RESTRICTED.QUEUE`, which the `app` account deliberately cannot see. The console is at https://localhost:9443.
 
 For frontend development run the API as above and `npx ng serve` in `src/web` (proxy to :5044) → http://localhost:4200.
 The RabbitMQ console is at https://localhost:15671 (`dqe-admin` / `dqe-admin`; the certificate is signed by the local
@@ -247,6 +289,27 @@ Settings are read, in increasing priority, from `appsettings.json`, `appsettings
 environment variables (`Clusters__0__Password=…`). Configuration arrays are merged **by position**: a cluster at index 0
 in `appsettings.Local.json` replaces the `local` development cluster, one at index 1 is added next to it.
 
+IBM MQ queue managers go in the same list with `"Broker": "ibmmq"`:
+
+```json
+{
+  "Name": "mq-prod",
+  "Description": "Payments queue manager",
+  "Broker": "ibmmq",
+  "QueueManager": "QMPAY1",
+  "Host": "mq-pay-01.example.com",
+  "Port": 1414,
+  "Channel": "DQE.SVRCONN",
+  "CipherSpec": "ECDHE_RSA_AES_256_GCM_SHA384",
+  "CaCertificatePath": "/etc/ssl/internal-ca.pem",
+  "ClientCertificatePath": "/etc/dqe/client.p12",
+  "ClientCertificatePassword": "<secret>",
+  "TimeZone": "Europe/Rome",
+  "Username": "dqesvc",
+  "Password": "<secret>"
+}
+```
+
 | setting | meaning |
 |---|---|
 | `ConnectionStrings:Explorer` | SQL Server database (roles, audit, staging) |
@@ -263,6 +326,10 @@ in `appsettings.Local.json` replaces the `local` development cluster, one at ind
 | `RabbitMq:TrendRetention` | trend history kept in memory (24 h) |
 | `RabbitMq:ErrorAnalysisMaxMessages` | messages read per error queue by the failure analysis (1 000) |
 | `RabbitMq:BrowseTruncateBytes` | payloads larger than this are truncated when browsing (256 KB) |
+| `Clusters[]` (IBM MQ) | `Broker: ibmmq`, `QueueManager`, `Host`, `Port`, `Channel`, `CipherSpec`, `CaCertificatePath`, `ClientCertificatePath`/`Password` (mutual TLS), `TimeZone`, `Queues` (fallback list without PCF), `Username`, `Password` |
+| `IbmMq:ActiveRefreshInterval` / `StructureRefreshInterval` / `IdleAfter` | as for RabbitMQ (5 s / 60 s / 2 min) |
+| `IbmMq:PcfResponseTimeout` | wait for PCF responses (10 s) |
+| `IbmMq:BrowseTruncateBytes` | message data read per message when browsing (256 KB) |
 | `LocalUsers[]` | test-phase users (`Username`, `Password`, `DisplayName`, `Groups`) |
 
 ### RabbitMQ service account
@@ -283,6 +350,21 @@ Recommended for production: `monitoring` tag with `read` (and `write` where mess
 vhosts the explorer should cover; `policymaker` only if shovel definitions must be visible. When RabbitMQ refuses an
 operation to the account, the API answers *502 RabbitMQ refused the service account* with RabbitMQ's reason, and
 messages involved stay where they were.
+
+### IBM MQ service account
+
+| capability | needs |
+|---|---|
+| connect | `+connect +inq` on the queue manager |
+| queue list, depths, open handles, queue manager info (PCF) | `+put` on `SYSTEM.ADMIN.COMMAND.QUEUE`, `+inq +dsp +get` on the model queue used for replies (`SYSTEM.DEFAULT.MODEL.QUEUE`), `+dsp` on the queues |
+| last put/get, uncommitted messages | `+dsp` on the queues (queue status) and queue monitoring on |
+| browse | `+browse` (and `+inq`) on the queue |
+| without PCF rights | `+inq` on each queue listed in `Clusters[].Queues` |
+
+Queues the account may not display are simply not listed, and the overview says so under "Limited visibility".
+Errors always carry the MQ reason code, its constant and its meaning (e.g. `2035 MQRC_NOT_AUTHORIZED`). Calling an
+operation that is not implemented for IBM MQ yet (move, copy, delete, purge, export, staging, trend, failure analysis)
+answers *400 Not supported for IBM MQ*, and the UI does not offer it.
 
 ### Test users (Development only, `appsettings.Development.json`)
 
@@ -307,7 +389,9 @@ cd src/web && npx ng build           # frontend build (production)
 - Login: hardcoded users for the test phase → OIDC (groups map onto the same role assignments). No role management UI yet.
 - Cluster credentials in configuration → secret store (Key Vault / Kubernetes secrets).
 - Importing QueueExplorer's proprietary `.mq` files (needs sample files to reverse-engineer the format).
-- Shovel management; SignalR push instead of polling; client certificates (mutual TLS).
+- Shovel management; SignalR push instead of polling; client certificates (mutual TLS) for RabbitMQ (IBM MQ has them).
 - The overview trend lives in memory: it restarts empty with the API (persisting it is a small step).
 - Browsing streams; AMQP 1.0 browse with the `modified` outcome to avoid incrementing the quorum delivery count.
-- IBM MQ and Kafka (the staging area already records the broker of each message).
+- IBM MQ operations: move, copy, delete, export and staging (browse and decoding are done); channel status; topics.
+- Kafka (the staging area already records the broker of each message).
+- MSMQ on remote Windows machines: analysed and parked — see [docs/msmq-support.md](docs/msmq-support.md).

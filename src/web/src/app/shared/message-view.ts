@@ -1,14 +1,15 @@
 import { ChangeDetectionStrategy, Component, computed, input, signal } from '@angular/core';
 import { BrowsedMessage } from '../core/models';
 import { BytesPipe, DateTimePipe, JsonValuePipe, RelativePipe, copyToClipboard } from './format';
+import { MqMessageDetails } from './mq-message-details';
 import { highlight } from './syntax';
 
-type Tab = 'nsb' | 'body' | 'headers' | 'properties';
+type Tab = 'nsb' | 'ibmmq' | 'body' | 'headers' | 'properties';
 
 /** Detail of a browsed message, with a structured view for NServiceBus messages. */
 @Component({
   selector: 'app-message-view',
-  imports: [DateTimePipe, RelativePipe, BytesPipe, JsonValuePipe],
+  imports: [DateTimePipe, RelativePipe, BytesPipe, JsonValuePipe, MqMessageDetails],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './message-view.html',
 })
@@ -16,8 +17,19 @@ export class MessageView {
   readonly message = input.required<BrowsedMessage>();
 
   private readonly selectedTab = signal<Tab | null>(null);
-  readonly tab = computed<Tab>(() => this.selectedTab() ?? (this.message().nServiceBus ? 'nsb' : 'body'));
+  readonly mq = computed(() => this.message().ibmMq);
+  readonly tab = computed<Tab>(() => {
+    const selected = this.selectedTab();
+    // A tab picked for one broker's message may not exist for the next one.
+    if (selected === 'nsb' && this.nsb()) return selected;
+    if (selected === 'ibmmq' && this.mq()) return selected;
+    if (selected === 'properties' && !this.mq()) return selected;
+    if (selected === 'body' || selected === 'headers') return selected;
+    return this.nsb() ? 'nsb' : this.mq() ? 'ibmmq' : 'body';
+  });
   readonly nsb = computed(() => this.message().nServiceBus);
+  /** Hex instead of decoded text (IBM MQ bodies, to check a doubtful code page). */
+  readonly showHex = signal(false);
   readonly showStack = signal(false);
   readonly copied = signal<string | null>(null);
 
@@ -37,7 +49,7 @@ export class MessageView {
   });
 
   readonly hexPreview = computed(() => {
-    const base64 = this.message().body.base64;
+    const base64 = this.message().body.base64 ?? this.message().ibmMq?.rawBodyBase64;
     if (!base64) return '';
     const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0)).slice(0, 512);
     const lines: string[] = [];

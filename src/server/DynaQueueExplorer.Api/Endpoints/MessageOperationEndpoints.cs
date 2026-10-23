@@ -1,4 +1,5 @@
 using System.Text.Json;
+using DynaQueueExplorer.Api.Http;
 using DynaQueueExplorer.Api.Security;
 using DynaQueueExplorer.Core.Auditing;
 using DynaQueueExplorer.Core.Messages;
@@ -18,11 +19,11 @@ public static class MessageOperationEndpoints
     public static void MapMessageOperationEndpoints(this IEndpointRouteBuilder app)
     {
         var messages = app.MapGroup("/api/clusters/{cluster}/messages").RequireAuthorization();
-        messages.MapPost("/transfer", Transfer);
-        messages.MapPost("/export", Export);
-        messages.MapPost("/stage", Stage);
-        messages.MapPost("/delete", Delete);
-        app.MapPost("/api/clusters/{cluster}/queues/purge", Purge).RequireAuthorization();
+        messages.MapPost("/transfer", Transfer).RabbitMqOnly("Moving and copying messages");
+        messages.MapPost("/export", Export).RabbitMqOnly("Exporting messages");
+        messages.MapPost("/stage", Stage).RabbitMqOnly("Staging messages");
+        messages.MapPost("/delete", Delete).RabbitMqOnly("Deleting messages");
+        app.MapPost("/api/clusters/{cluster}/queues/purge", Purge).RequireAuthorization().RabbitMqOnly("Purging queues");
     }
 
     /// <summary>Deletes the selected messages (or the first N): they are read without ack, then acknowledged.</summary>

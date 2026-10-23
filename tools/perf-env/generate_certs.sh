@@ -8,7 +8,7 @@ dir="$(cd "$(dirname "$0")/../.." && pwd)/docker/rabbitmq/certs"
 mkdir -p "$dir"
 cd "$dir"
 
-if [[ -f server.pem && "${1:-}" != "--force" ]]; then
+if [[ -f client.p12 && "${1:-}" != "--force" ]]; then
   echo "Certificates already exist in $dir (use --force to regenerate)."
   exit 0
 fi
@@ -28,8 +28,20 @@ openssl x509 -req -in server.csr -CA ca.pem -CAkey ca.key -CAcreateserial -days 
   -extfile server.ext -out server.pem 2>/dev/null
 rm -f server.csr server.ext ca.srl
 
+# Client certificate for IBM MQ mutual TLS (the explorer presents it; the queue manager trusts the same CA).
+openssl req -newkey rsa:2048 -nodes -sha256 -keyout client.key -out client.csr -subj "/CN=dqe-explorer/OU=DynaQueueExplorer" 2>/dev/null
+cat > client.ext <<'EXT'
+basicConstraints=CA:FALSE
+keyUsage=critical,digitalSignature,keyEncipherment
+extendedKeyUsage=clientAuth
+EXT
+openssl x509 -req -in client.csr -CA ca.pem -CAkey ca.key -CAcreateserial -days 825 -sha256 -extfile client.ext -out client.pem 2>/dev/null
+openssl pkcs12 -export -in client.pem -inkey client.key -certfile ca.pem -name dqe-explorer -out client.p12 -passout pass:dqe-local 2>/dev/null
+rm -f client.csr client.ext ca.srl
+
 # Readable by the rabbitmq user inside the container (local development only).
-chmod 644 ca.pem server.pem server.key
+chmod 644 ca.pem server.pem server.key client.pem client.p12
+chmod 600 client.key
 chmod 600 ca.key
 echo "Created CA and server certificate in $dir"
 openssl x509 -in server.pem -noout -subject -issuer -ext subjectAltName

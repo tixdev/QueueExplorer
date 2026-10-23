@@ -1,3 +1,5 @@
+using DynaQueueExplorer.IbmMq.Client;
+using DynaQueueExplorer.IbmMq.Snapshots;
 using System.Text.Json;
 using DynaQueueExplorer.Api.Http;
 using DynaQueueExplorer.Api.Security;
@@ -23,14 +25,14 @@ public static class ClusterEndpoints
 
         cluster.MapGet("/overview", GetOverview);
         cluster.MapGet("/topology", GetTopology);
-        cluster.MapGet("/shovels", GetShovels);
-        cluster.MapGet("/queue", GetQueue);
+        cluster.MapGet("/shovels", GetShovels).RabbitMqOnly("Shovels");
+        cluster.MapGet("/queue", GetQueue).RabbitMqOnly("Live queue details");
         cluster.MapPost("/refresh", Refresh);
         cluster.MapPost("/messages/browse", Browse);
     }
 
     private static async Task<IResult> GetOverview(
-        string cluster, HttpContext http, CurrentUser user, ClusterSnapshotService snapshots, ConditionalJson conditional, CancellationToken ct)
+        string cluster, HttpContext http, CurrentUser user, ClusterSnapshotService snapshots, MqSnapshotService mq, ConditionalJson conditional, CancellationToken ct)
     {
         var permissions = await user.GetPermissionsAsync(ct);
         var canOverview = permissions.Allows(Permissions.OverviewRead, new ResourceRef(cluster));
@@ -38,21 +40,58 @@ public static class ClusterEndpoints
         if (!canOverview && !canNodes)
             return NotFoundOrForbidden(permissions, cluster);
 
+        if (mq.Exists(cluster))
+        {
+            var m = await mq.GetSnapshotAsync(cluster, ct);
+            return conditional.Respond(http, "overview", cluster, m.Version, await user.GetPermissionFingerprintAsync(ct), () =>
+                new OverviewResponse(MqInfo(mq, m), canOverview
+                    ? new RmqOverview(m.QueueManager.Name, null, null, "IBM MQ", m.QueueManager.Version ?? $"command level {m.QueueManager.CommandLevel}",
+                        new RmqQueueTotals(m.Queues.Sum(q => q.Depth ?? 0), m.Queues.Sum(q => q.Depth ?? 0), m.Queues.Sum(q => q.Uncommitted ?? 0)),
+                        new RmqObjectTotals(Queues: m.Queues.Count))
+                    : null, null, m.QueueManager));
+        }
+
         var snapshot = await snapshots.GetSnapshotAsync(cluster, ct);
         return conditional.Respond(http, "overview", cluster, snapshot.MetricsVersion, await user.GetPermissionFingerprintAsync(ct), () =>
             new OverviewResponse(Info(snapshots, snapshot), canOverview ? snapshot.Overview : null, canNodes ? snapshot.Nodes : null));
     }
 
     private static async Task<IResult> GetTopology(
-        string cluster, HttpContext http, CurrentUser user, ClusterSnapshotService snapshots, ConditionalJson conditional, CancellationToken ct)
+        string cluster, HttpContext http, CurrentUser user, ClusterSnapshotService snapshots, MqSnapshotService mq, ConditionalJson conditional, CancellationToken ct)
     {
         var permissions = await user.GetPermissionsAsync(ct);
         if (!permissions.AllowsAnywhere(Permissions.QueuesRead, cluster) && !permissions.AllowsAnywhere(Permissions.ExchangesRead, cluster))
             return NotFoundOrForbidden(permissions, cluster);
 
+        if (mq.Exists(cluster))
+        {
+            var m = await mq.GetSnapshotAsync(cluster, ct);
+            return conditional.Respond(http, "topology", cluster, m.Version, await user.GetPermissionFingerprintAsync(ct), () => BuildMqTopology(mq, m, permissions));
+        }
+
         var snapshot = await snapshots.GetSnapshotAsync(cluster, ct);
         return conditional.Respond(http, "topology", cluster, snapshot.TopologyVersion, await user.GetPermissionFingerprintAsync(ct),
             () => BuildTopology(snapshots, snapshot, permissions));
+    }
+
+    /// <summary>IBM MQ queues in the same shape as RabbitMQ's; the queue manager plays the role of the vhost (also for RBAC).</summary>
+    private static TopologyResponse BuildMqTopology(MqSnapshotService mq, MqSnapshot m, PermissionSet permissions)
+    {
+        var qmgr = m.QueueManager.Name;
+        var queues = m.Queues
+            .Where(q => permissions.Allows(Permissions.QueuesRead, new ResourceRef(m.Cluster, qmgr, q.Name)))
+            .Select(q => new QueueDto(qmgr, q.Name, q.Transmission ? "xmitq" : q.Type, q.InhibitGet ? "get inhibited" : q.InhibitPut ? "put inhibited" : "available",
+                true, false, false, null, q.Depth, q.Depth, q.Uncommitted, q.OpenInput, null,
+                q.Type is "local" or "alias" && permissions.Allows(Permissions.MessagesBrowse, new ResourceRef(m.Cluster, qmgr, q.Name)),
+                q.MaxDepth, q.OpenOutput, q.InhibitGet, q.InhibitPut, q.Target, q.Description, q.LastPut, q.LastGet, q.OldestMessageAgeSeconds, q.Transmission))
+            .ToList();
+        return new TopologyResponse(MqInfo(mq, m), queues.Count > 0 ? [qmgr] : [], queues, [], []);
+    }
+
+    private static SnapshotInfo MqInfo(MqSnapshotService mq, MqSnapshot m)
+    {
+        var (lastErrorAt, lastError) = mq.GetHealth(m.Cluster);
+        return new SnapshotInfo(m.FetchedAt, (int)m.FetchDuration.TotalMilliseconds, lastErrorAt, lastError, m.Limitations);
     }
 
     private static TopologyResponse BuildTopology(ClusterSnapshotService snapshots, ClusterSnapshot snapshot, PermissionSet permissions)
@@ -149,11 +188,13 @@ public static class ClusterEndpoints
         return Results.Ok(new QueueDetailResponse(await queue, bindings));
     }
 
-    private static async Task<IResult> Refresh(string cluster, CurrentUser user, ClusterSnapshotService snapshots, CancellationToken ct)
+    private static async Task<IResult> Refresh(string cluster, CurrentUser user, ClusterSnapshotService snapshots, MqSnapshotService mq, CancellationToken ct)
     {
         var permissions = await user.GetPermissionsAsync(ct);
         if (permissions.ActionsAnywhereIn(cluster).Count == 0)
             return NotFoundOrForbidden(permissions, cluster);
+        if (mq.Exists(cluster))
+            return Results.Ok(MqInfo(mq, await mq.RefreshAsync(cluster, ct)));
 
         // A manual refresh also re-reads the structure (exchanges, bindings…), which is otherwise read less often.
         var snapshot = await snapshots.RefreshAsync(cluster, ct, includeStructure: true);
@@ -165,6 +206,8 @@ public static class ClusterEndpoints
         BrowseRequest request,
         CurrentUser user,
         ClusterClients clients,
+        MqSnapshotService mq,
+        MqBrowser mqBrowser,
         IAuditLog audit,
         IOptions<RabbitMqOptions> options,
         CancellationToken ct)
@@ -174,6 +217,16 @@ public static class ClusterEndpoints
         {
             await audit.WriteAsync(new AuditRecord(user.Username, Permissions.MessagesBrowse, AuditOutcome.Denied, cluster, request.Vhost, request.Queue), ct);
             return NotFoundOrForbidden(permissions, cluster);
+        }
+
+        if (mq.Exists(cluster))
+        {
+            // IBM MQ browsing is non-destructive: no confirmation, no requeue side effects.
+            var mqMessages = await mqBrowser.BrowseAsync(cluster, request.Queue, Math.Clamp(request.Count, 1, MaxBrowseCount), ct);
+            var depth = (await mq.GetSnapshotAsync(cluster, ct)).Queues.FirstOrDefault(q => q.Name == request.Queue)?.Depth;
+            await audit.WriteAsync(new AuditRecord(user.Username, Permissions.MessagesBrowse, AuditOutcome.Success, cluster, request.Vhost, request.Queue,
+                $"returned={mqMessages.Count}"), ct);
+            return Results.Ok(new BrowseResponse("ibmmq", null, depth, [], mqMessages.Select((m, i) => MessageViews.FromMq(i, m)).ToList()));
         }
 
         // Read live, not from the snapshot: whether requeueing can lose messages depends on the effective

@@ -1,11 +1,10 @@
 using System.Net.Security;
 using System.Security.Cryptography.X509Certificates;
-using DynaQueueExplorer.Core.Clusters;
 
-namespace DynaQueueExplorer.RabbitMq;
+namespace DynaQueueExplorer.Core.Clusters;
 
 /// <summary>
-/// Server certificate validation for a cluster, shared by the management API client and AMQP connections.
+/// Server certificate validation for a cluster, shared by every broker client (RabbitMQ HTTP and AMQP, IBM MQ).
 /// Without a configured CA the platform validation applies; with one, the chain must end in that CA and the
 /// host name must match. Validation is never switched off.
 /// </summary>

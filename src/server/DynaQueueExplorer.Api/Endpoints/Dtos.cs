@@ -1,3 +1,5 @@
+using DynaQueueExplorer.IbmMq.Formats;
+using DynaQueueExplorer.IbmMq.Snapshots;
 using System.Text.Json;
 using DynaQueueExplorer.Core.Messages;
 using DynaQueueExplorer.NServiceBus;
@@ -8,7 +10,7 @@ namespace DynaQueueExplorer.Api.Endpoints;
 /// <param name="Limitations">What the RabbitMQ service account is not allowed to see on this cluster.</param>
 public sealed record SnapshotInfo(DateTimeOffset FetchedAt, int FetchMs, DateTimeOffset? LastErrorAt, string? LastError, IReadOnlyList<string> Limitations);
 
-public sealed record OverviewResponse(SnapshotInfo Snapshot, RmqOverview? Overview, IReadOnlyList<RmqNode>? Nodes);
+public sealed record OverviewResponse(SnapshotInfo Snapshot, RmqOverview? Overview, IReadOnlyList<RmqNode>? Nodes, MqQueueManagerInfo? QueueManager = null);
 
 public sealed record QueueDto(
     string Vhost,
@@ -24,7 +26,18 @@ public sealed record QueueDto(
     long? Unacked,
     int? Consumers,
     Dictionary<string, JsonElement>? Arguments,
-    bool CanBrowse);
+    bool CanBrowse,
+    // IBM MQ only
+    long? MaxDepth = null,
+    int? OpenOutput = null,
+    bool? InhibitGet = null,
+    bool? InhibitPut = null,
+    string? Target = null,
+    string? Description = null,
+    DateTimeOffset? LastPut = null,
+    DateTimeOffset? LastGet = null,
+    long? OldestMessageAgeSeconds = null,
+    bool? Transmission = null);
 
 public sealed record ExchangeDto(string Vhost, string Name, string Type, bool Durable, bool AutoDelete, bool Internal, Dictionary<string, JsonElement>? Arguments);
 
@@ -58,6 +71,7 @@ public sealed record BrowseRequest(string Vhost, string Queue, int Count = 20, b
 
 /// <param name="Key">Stable identity used to select the message for move/copy/export (see MessageKeys).</param>
 /// <param name="StagedId">Set for messages in the staging area.</param>
+/// <param name="SentAt">When the message was produced: NServiceBus TimeSent, else the AMQP timestamp, else the IBM MQ put time.</param>
 public sealed record BrowsedMessage(
     int Index,
     string Key,
@@ -76,7 +90,24 @@ public sealed record BrowsedMessage(
     string? LastPublishedTo = null,
     string? Broker = null,
     DateTimeOffset? EditedAt = null,
-    string? EditedBy = null);
+    string? EditedBy = null,
+    MqMessageView? IbmMq = null,
+    DateTimeOffset? SentAt = null);
+
+/// <summary>IBM MQ view of a message: the MQMD, the header chain and how the body was decoded.</summary>
+/// <param name="RawBodyBase64">First bytes of a body decoded as text, for the hex view (binary bodies carry them in the body itself).</param>
+public sealed record MqMessageView(
+    string MessageIdHex,
+    string? MessageIdText,
+    string CorrelationIdHex,
+    string? CorrelationIdText,
+    IReadOnlyList<MqProperty> Mqmd,
+    IReadOnlyList<MqHeader> Headers,
+    string BodyFormat,
+    string BodyCcsid,
+    string? Warning,
+    PcfMessage? Pcf,
+    string? RawBodyBase64 = null);
 
 /// <param name="DeliveryLimit">Effective delivery limit of a quorum queue; -1 means unlimited.</param>
 public sealed record BrowseResponse(string? QueueType, int? DeliveryLimit, long? QueueDepth, IReadOnlyList<string> Warnings, IReadOnlyList<BrowsedMessage> Messages);
