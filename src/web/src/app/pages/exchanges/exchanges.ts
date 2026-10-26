@@ -5,6 +5,7 @@ import { ActivatedRoute, RouterLink } from '@angular/router';
 import { ClusterStore } from '../../core/cluster-store';
 import { Exchange } from '../../core/models';
 import { EventFlow } from '../../shared/event-flow';
+import { FlowLinks } from '../../shared/flow-links';
 import { NumberPipe } from '../../shared/format';
 import { matchesSearch, persistedSignal } from '../../shared/list-filters';
 import { ExchangeKind, eventName, exchangeKind, subscribersOf, subscriptionsOf } from '../../shared/nsb-topology';
@@ -20,7 +21,7 @@ interface Row {
 
 @Component({
   selector: 'app-exchanges',
-  imports: [ScrollingModule, RouterLink, NumberPipe, EventFlow],
+  imports: [ScrollingModule, RouterLink, NumberPipe, EventFlow, FlowLinks],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './exchanges.html',
 })

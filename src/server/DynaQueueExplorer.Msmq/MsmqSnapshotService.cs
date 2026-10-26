@@ -41,6 +41,20 @@ public sealed class MsmqSnapshotService(
         return (s.LastErrorAt, s.LastError);
     }
 
+    /// <summary>
+    /// The current snapshot without waiting for the agent (null when the machine has not been read yet); counts as a
+    /// use of the machine, so polling starts or continues.
+    /// </summary>
+    public MsmqSnapshot? Peek(string cluster)
+    {
+        var state = GetState(cluster);
+        var wasIdle = time.GetUtcNow() - state.LastAccess > options.Value.IdleAfter;
+        state.LastAccess = time.GetUtcNow();
+        if (wasIdle || state.Snapshot is null)
+            state.Wake();
+        return state.Snapshot;
+    }
+
     public async Task<MsmqSnapshot> GetSnapshotAsync(string cluster, CancellationToken ct)
     {
         var state = GetState(cluster);

@@ -7,6 +7,7 @@ import {
   BrowsedMessage,
   EditStagedMessageRequest,
   ErrorQueueSummary,
+  FlowsResponse,
   TrendResponse,
   Me,
   OverviewResponse,
@@ -60,6 +61,11 @@ export class Api {
   /** With a queue group, the trend of that group's queues only. */
   trend(cluster: string, minutes: number, group?: string): Observable<TrendResponse> {
     return this.http.get<TrendResponse>(`${base(cluster)}/trend`, { params: group ? { minutes, group } : { minutes } });
+  }
+
+  /** Migration flows across brokers (shovels, bindings, MSMQ ⇄ RabbitMQ bridge), built from the snapshots. */
+  flows(): Observable<Tagged<FlowsResponse>> {
+    return this.tagged(this.http.get<FlowsResponse>('/api/flows', { observe: 'response' }));
   }
 
   errorQueues(cluster: string): Observable<ErrorQueueSummary[]> {

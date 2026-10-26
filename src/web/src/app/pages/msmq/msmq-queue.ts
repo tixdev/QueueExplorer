@@ -7,6 +7,7 @@ import { ClusterStore } from '../../core/cluster-store';
 import { errorMessage } from '../../core/http';
 import { BrowseResponse, BrowsedMessage } from '../../core/models';
 import { BytesPipe, NumberPipe } from '../../shared/format';
+import { FlowLinks } from '../../shared/flow-links';
 import { MessageList } from '../../shared/message-list';
 import { MessageView } from '../../shared/message-view';
 import { KindLabels, isStuckOutgoing, messagesLabel, shortName } from './msmq';
@@ -17,7 +18,7 @@ import { KindLabels, isStuckOutgoing, messagesLabel, shortName } from './msmq';
  */
 @Component({
   selector: 'app-msmq-queue',
-  imports: [RouterLink, NumberPipe, BytesPipe, MessageList, MessageView],
+  imports: [RouterLink, NumberPipe, BytesPipe, MessageList, MessageView, FlowLinks],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './msmq-queue.html',
 })

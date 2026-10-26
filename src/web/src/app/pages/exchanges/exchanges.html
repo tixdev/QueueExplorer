@@ -41,6 +41,7 @@
           <span [class]="'kind-badge ' + c.kind">{{ kindLabel(c.kind) }}</span>
           <span class="muted small">{{ c.exchange.vhost }} · {{ c.exchange.type }} · {{ c.exchange.durable ? 'durable' : 'transient' }}{{ c.exchange.internal ? ' · internal' : '' }}</span>
         </header>
+        <app-flow-links broker="rabbitmq" kind="exchange" [cluster]="store.cluster()!" [vhost]="c.exchange.vhost" [name]="c.exchange.name" />
 
         @if (c.kind === 'event') {
           <h4>Subscribers <span class="count">{{ subscribers().length }}</span></h4>

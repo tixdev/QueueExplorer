@@ -1663,6 +1663,102 @@ pre.syntax .decl { color: var(--syn-comment); font-style: italic; }
   grid-template-columns: minmax(220px, 1fr) minmax(110px, 200px) 80px 110px 60px 60px 120px 100px 100px;
 }
 
+/* Migration flows: one card per flow, nodes in columns from source to destination. */
+.flows-page {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.75rem 1rem;
+}
+.flow-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.flow-card {
+  padding: 0.6rem 0.8rem;
+  min-width: 0;
+}
+.flow-card.has-problems {
+  border-left: 3px solid var(--warn);
+}
+.flow-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+  min-width: 0;
+}
+.flow-direction[data-direction='to-rabbitmq'] { background: var(--ok-bg); color: var(--ok); }
+.flow-direction[data-direction='to-msmq'] { background: var(--warn-bg); color: var(--warn); }
+.flow-direction[data-direction='both'],
+.flow-direction[data-direction='unknown'] { background: var(--surface-2); color: var(--muted); }
+.flow-direction[data-direction='rabbitmq'] { background: var(--info-bg); color: var(--accent); }
+.flow-pipeline {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  overflow-x: auto;
+  padding-bottom: 0.2rem;
+}
+.flow-stage {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  flex: 0 1 260px;
+  min-width: 180px;
+}
+.flow-node {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.3rem 0.5rem;
+  background: var(--surface);
+  min-width: 0;
+}
+.flow-node[data-broker='msmq'] { border-left: 3px solid var(--warn); }
+.flow-node[data-broker='rabbitmq'] { border-left: 3px solid var(--accent); }
+.flow-node.problem { background: var(--warn-bg); }
+.flow-node.unknown { border-style: dashed; }
+.flow-node-where,
+.flow-node-name,
+.flow-node-stats {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+}
+.flow-node-where { font-size: 0.72rem; }
+.flow-broker { font-weight: 600; color: var(--muted); white-space: nowrap; }
+.flow-node-name .mono { font-size: 0.82rem; }
+.flow-links {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  flex: 0 0 auto;
+  min-width: 90px;
+  max-width: 170px;
+}
+.flow-link {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-size: 0.72rem;
+  color: var(--muted);
+  line-height: 1.1;
+}
+.flow-link-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.flow-arrow { font-size: 1.1rem; }
+.flow-link[data-kind='bridge'] { color: var(--warn); font-weight: 600; }
+.flow-link.inferred { font-style: italic; }
+.flow-link.problem { color: var(--danger); font-weight: 600; }
+.flow-alerts {
+  margin: 0.4rem 0 0;
+  padding-left: 1.1rem;
+}
+.flow-card .ellipsis {
+  min-width: 0;
+}
+
 /* MSMQ */
 .msmq-queues-table .row {
   grid-template-columns: minmax(260px, 1fr) 100px 90px 90px 70px 130px;

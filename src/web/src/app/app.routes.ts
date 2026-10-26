@@ -88,6 +88,7 @@ export const routes: Routes = [
         component: BrokerPage,
         data: brokerPages({ rabbitmq: () => import('./pages/shovels/shovels').then((m) => m.ShovelsPage) }),
       },
+      { path: 'flows', loadComponent: () => import('./pages/flows/flows').then((m) => m.FlowsPage) },
       { path: 'staging', loadComponent: () => import('./pages/staging/staging').then((m) => m.StagingPage) },
       { path: 'audit', loadComponent: () => import('./pages/audit/audit').then((m) => m.AuditPage) },
     ],

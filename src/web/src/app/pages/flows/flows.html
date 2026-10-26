@@ -1,0 +1,125 @@
+@if (error(); as e) {
+  <div class="banner error">{{ e }}</div>
+}
+<div class="flows-page">
+  <div class="toolbar">
+    @if (focus()) {
+      <span>One flow</span>
+      <button class="small" (click)="clearFocus()">Show all flows</button>
+    } @else {
+      <select (change)="direction.set($any($event.target).value)" aria-label="Direction">
+        <option value="" [selected]="!direction()">All directions</option>
+        @for (d of directions; track d) {
+          <option [value]="d" [selected]="d === direction()">{{ directionLabels[d] }}</option>
+        }
+      </select>
+      @if ((data()?.bridges ?? []).length) {
+        <select (change)="bridge.set($any($event.target).value)" aria-label="Bridge">
+          <option value="" [selected]="!bridge()">All bridges</option>
+          @for (b of data()!.bridges; track b) {
+            <option [value]="b" [selected]="b === bridge()">Bridge {{ b }}</option>
+          }
+        </select>
+      }
+      <input class="search" type="search" placeholder="Search queues, exchanges, vhosts, shovels…" [value]="search()" (input)="search.set($any($event.target).value)" />
+      <label class="check"><input type="checkbox" [checked]="onlyProblems()" (change)="onlyProblems.set($any($event.target).checked)" /> Only with problems</label>
+      <label class="check"><input type="checkbox" [checked]="onlyWithMessages()" (change)="onlyWithMessages.set($any($event.target).checked)" /> Only with messages</label>
+      <label class="check" title="Bridged pairs of error queues (one per endpoint)">
+        <input type="checkbox" [checked]="hideErrorPairs()" (change)="hideErrorPairs.set($any($event.target).checked)" /> Hide error-queue pairs
+      </label>
+    }
+    <span class="spacer"></span>
+    @if (data(); as d) {
+      <span class="muted">
+        {{ totals().flows | num }} flows · {{ totals().bridged | num }} bridged · {{ totals().shovels | num }} shovels ·
+        <span [class.warn-text]="totals().problems > 0">{{ totals().problems | num }} with problems</span> ·
+        {{ totals().messages | num }} messages
+      </span>
+    }
+  </div>
+
+  @if (data()?.pending?.length) {
+    <div class="banner warn small">Not read yet, their flows are missing: {{ data()!.pending.join(', ') }}. They appear as soon as the snapshots arrive.</div>
+  }
+
+  @if (!data() && !error()) {
+    <p class="muted">Building the flows from the snapshots…</p>
+  }
+
+  <div class="flow-list">
+    @for (f of shown(); track f.id) {
+      <section class="card flow-card" [class.has-problems]="f.alerts.length > 0">
+        <header class="flow-head">
+          <span class="badge flow-direction" [attr.data-direction]="f.direction">{{ directionLabels[f.direction] }}</span>
+          <strong class="mono ellipsis">{{ f.title }}</strong>
+          @if (f.bridge) { <span class="badge muted">bridge {{ f.bridge }}</span> }
+          <span class="spacer"></span>
+          @if (f.alerts.length) { <span class="warn-text small">{{ f.alerts.length }} problem{{ f.alerts.length > 1 ? 's' : '' }}</span> }
+        </header>
+
+        <div class="flow-pipeline">
+          @for (s of stages(f); track $index; let last = $last) {
+            <div class="flow-stage">
+              @for (n of s.nodes; track n.id) {
+                <div class="flow-node" [class.problem]="nodeProblem(n)" [class.unknown]="!n.known" [attr.data-broker]="n.broker">
+                  <div class="flow-node-where">
+                    <span class="flow-broker">{{ n.broker === 'msmq' ? 'MSMQ' : 'RabbitMQ' }}</span>
+                    <span class="muted ellipsis" [title]="n.cluster + ' · ' + n.vhost">{{ n.vhost }}</span>
+                  </div>
+                  <div class="flow-node-name">
+                    @if (n.kind === 'exchange') { <span class="badge muted">exchange</span> }
+                    @if (nodeLink(n); as link) {
+                      <a class="mono ellipsis" [routerLink]="link" [title]="n.name">{{ displayName(n) }}</a>
+                    } @else {
+                      <span class="mono ellipsis" [title]="n.name">{{ displayName(n) }}</span>
+                    }
+                  </div>
+                  @if (n.kind === 'queue') {
+                    <div class="flow-node-stats small">
+                      @if (!n.known) {
+                        <span class="hot">does not exist</span>
+                      } @else {
+                        <span [class.hot]="(n.messages ?? 0) > 0">{{ n.messages | num }} msg</span>
+                        @if (n.broker === 'rabbitmq') {
+                          <span class="muted" [class.warn-text]="n.consumers === 0 && (n.messages ?? 0) > 0">· {{ n.consumers | num }} consumer{{ n.consumers === 1 ? '' : 's' }}</span>
+                        }
+                      }
+                    </div>
+                  }
+                </div>
+              }
+            </div>
+            @if (!last) {
+              <div class="flow-links">
+                @for (h of s.hops; track h.from + h.to + h.kind) {
+                  <div class="flow-link" [class.problem]="hopProblem(h)" [class.inferred]="h.inferred" [attr.data-kind]="h.kind"
+                    [title]="(h.name ?? '') + (h.detail ? ' · ' + h.detail : '') + ' → ' + displayName(h.toNode)">
+                    <span class="flow-link-label">{{ hopLabel(h) }}</span>
+                    <span class="flow-arrow" aria-hidden="true">→</span>
+                  </div>
+                }
+              </div>
+            }
+          }
+        </div>
+
+        @if (f.alerts.length) {
+          <ul class="flow-alerts small">
+            @for (a of f.alerts; track a) { <li class="warn-text">{{ a }}</li> }
+          </ul>
+        }
+      </section>
+    } @empty {
+      @if (data()) {
+        <p class="muted">No flow matches. Flows come from RabbitMQ shovels and from the bridge vhosts configured in MigrationBridges.</p>
+      }
+    }
+    @if (flows().length > shown().length) {
+      <button (click)="more()">Show {{ flows().length - shown().length }} more</button>
+    }
+  </div>
+
+  @if (data(); as d) {
+    <p class="muted small">Built from the snapshots {{ d.generatedAt | relative }}. Bridge direction comes from the shovels around the bridged queue; when there are none it is guessed from the name (“torabbit”) or shown as unknown.</p>
+  }
+</div>

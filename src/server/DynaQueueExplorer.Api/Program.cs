@@ -105,6 +105,7 @@ app.MapAuthEndpoints();
 app.MapClusterEndpoints();
 app.MapMessageOperationEndpoints();
 app.MapOverviewEndpoints();
+app.MapFlowEndpoints();
 app.MapStagingEndpoints();
 app.MapAuditEndpoints();
 // The default fallback skips paths whose last segment looks like a file name, but cluster routes contain queue

@@ -47,6 +47,7 @@
         @if (can(A.shovelsRead) && store.isRabbitMq()) {
           <a [routerLink]="['/c', cluster(), 'shovels']" routerLinkActive="active">Shovels</a>
         }
+        <a [routerLink]="['/c', cluster(), 'flows']" routerLinkActive="active" title="Migration flows: shovels and the MSMQ ⇄ RabbitMQ bridge">Flows</a>
         @if (canStaging()) {
           <a [routerLink]="['/c', cluster(), 'staging']" routerLinkActive="active">Staging</a>
         }

@@ -11,12 +11,13 @@ import { JsonValuePipe, NumberPipe } from '../../shared/format';
 import { MessageView } from '../../shared/message-view';
 import { MessageList } from '../../shared/message-list';
 import { DestinationChoice, DestinationDialog, retryTargets } from '../../shared/destination-dialog';
+import { FlowLinks } from '../../shared/flow-links';
 import { Auth } from '../../core/auth';
 import { Actions, OperationFailure } from '../../core/models';
 
 @Component({
   selector: 'app-queue',
-  imports: [RouterLink, NumberPipe, JsonValuePipe, MessageView, MessageList, DestinationDialog],
+  imports: [RouterLink, NumberPipe, JsonValuePipe, MessageView, MessageList, DestinationDialog, FlowLinks],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './queue.html',
 })

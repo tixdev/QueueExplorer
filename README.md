@@ -100,6 +100,23 @@ staging their messages, and Kafka, are planned. Each broker plugs in next to the
   queues, transaction, time-to-reach/time-to-be-received, sender. **NServiceBus headers** are read from the message
   *extension* (XML), so the NServiceBus view, failure details and Header tab work as for RabbitMQ.
 
+### Migration flows (MSMQ ⇄ RabbitMQ)
+While endpoints move from MSMQ to RabbitMQ, messages travel through **RabbitMQ shovels** and the **bridge** that moves
+messages between MSMQ and RabbitMQ. The *Flows* page shows every such path as a pipeline from source to destination,
+with the messages waiting at each step:
+- **shovels**: source and destination queue or exchange (any vhost, or another broker by URI) and the shovel state; for
+  an exchange destination, the bindings it routes through (two levels);
+- **bridge**: a queue in a configured *bridge vhost* with the same name as a queue on one of the environment's MSMQ
+  machines (`MigrationBridges`). The direction comes from the shovels around the RabbitMQ queue — fed by a shovel it
+  sends to MSMQ, drained by one it receives from MSMQ; otherwise it is guessed from the name (`torabbit`) or shown as
+  unknown;
+- connected steps form one flow, e.g. `dx` queue → shovel → exchange → binding → `internal-services` queue, or MSMQ
+  queue → bridge → bridge-vhost queue → shovel → `internal-services` queue;
+- problems: shovels not running, messages waiting with no consumer, messages in error queues, shovel ends that do not
+  exist. Flows can be filtered by direction, bridge (environment), text and the selected queue group.
+
+Queue pages (RabbitMQ and MSMQ) and the exchange panel say when the queue or exchange is part of a flow and link to it.
+
 ### Move, copy, retry
 All operations work on the **selected messages** or, if none is selected, on the **first N messages** of the queue.
 - **Move** / **Copy** to any queue (any vhost of the cluster).
@@ -435,6 +452,18 @@ sc.exe start DqeMsmqAgent
 It also runs from a console (`DynaQueueExplorer.MsmqAgent.exe`) for testing. `Msmq:ActiveRefreshInterval` (30 s),
 `Msmq:IdleAfter` (5 min), `Msmq:RequestTimeout` (2 min), `Msmq:WarmUpOnStart` and `Msmq:BrowseTruncateBytes` tune the
 explorer side.
+
+### Migration bridges
+
+```json
+"MigrationBridges": [
+  { "Name": "T1", "RabbitMqCluster": "ittest", "Vhosts": ["*.t1.x.bridge"], "MsmqConnections": ["msmq-ba-wxi001", "dyn-ba-wxi001"] }
+]
+```
+
+Per environment: the RabbitMQ cluster, the bridge vhosts (glob, case-insensitive) and the MSMQ connections of the same
+environment. Queue names are compared case-insensitively, without MSMQ's `private$\` prefix. Shovel flows need no
+configuration. Users see the steps they may read (queues.read, exchanges.read; shovels only with shovels.read).
 
 ### RabbitMQ service account
 

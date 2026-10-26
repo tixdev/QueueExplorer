@@ -187,30 +187,24 @@ public static class ClusterEndpoints
             // Static shovels have no vhost: they require a grant on every vhost ("*" matches the empty string).
             bool CanRead(string? vhost) => permissions.Allows(Permissions.ShovelsRead, new ResourceRef(cluster, vhost ?? string.Empty));
 
-            var definitions = snapshot.ShovelDefinitions.ToDictionary(d => (d.Vhost, d.Name), d => d.Value);
-            var statuses = snapshot.ShovelStatuses.ToDictionary(s => (s.Vhost ?? string.Empty, s.Name));
-
-            var keys = statuses.Keys.Union(definitions.Keys.Select(k => (k.Vhost, k.Name)));
-            return keys
-                .Where(k => CanRead(k.Item1))
-                .Select(k =>
+            return ShovelViews.Merge(snapshot)
+                .Where(s => CanRead(s.Vhost))
+                .Select(s =>
                 {
-                    statuses.TryGetValue(k, out var status);
-                    JsonElement? definition = definitions.TryGetValue(k, out var d) ? CredentialMasking.MaskJson(d) : null;
+                    var status = s.Status;
+                    JsonElement? definition = s.Definition is { } d ? CredentialMasking.MaskJson(d) : null;
                     return new ShovelDto(
-                        k.Item2,
-                        k.Item1.Length > 0 ? k.Item1 : null,
+                        s.Name,
+                        s.Vhost.Length > 0 ? s.Vhost : null,
                         status?.Type ?? "dynamic",
-                        status?.State ?? "not running",
+                        s.State,
                         status?.Node,
                         status?.Timestamp,
-                        // A shovel that cannot connect has no status: fall back to its definition.
-                        Endpoint(status?.SrcQueue ?? Field(definition, "src-queue"), status?.SrcExchange ?? Field(definition, "src-exchange"),
-                            status?.SrcExchangeKey ?? Field(definition, "src-exchange-key")),
-                        Endpoint(status?.DestQueue ?? Field(definition, "dest-queue"), status?.DestExchange ?? Field(definition, "dest-exchange"),
-                            status?.DestExchangeKey ?? Field(definition, "dest-exchange-key")),
-                        CredentialMasking.MaskUri(status?.SrcUri) ?? Field(definition, "src-uri"),
-                        CredentialMasking.MaskUri(status?.DestUri) ?? Field(definition, "dest-uri"),
+                        Endpoint(s.SrcQueue, s.SrcExchange, s.SrcExchangeKey),
+                        Endpoint(s.DestQueue, s.DestExchange, s.DestExchangeKey),
+                        // Credentials never leave the server: URIs from the status are masked, those of the definition already are.
+                        CredentialMasking.MaskUri(status?.SrcUri) ?? ShovelViews.Field(definition, "src-uri"),
+                        CredentialMasking.MaskUri(status?.DestUri) ?? ShovelViews.Field(definition, "dest-uri"),
                         status?.Reason is { } reason ? (reason.ValueKind == JsonValueKind.String ? reason.GetString() : reason.GetRawText()) : null,
                         definition);
                 })
@@ -338,19 +332,6 @@ public static class ClusterEndpoints
     /// <summary>Hides the existence of clusters the user has no access to at all.</summary>
     private static IResult NotFoundOrForbidden(PermissionSet permissions, string cluster) =>
         permissions.ActionsAnywhereIn(cluster).Count == 0 ? Results.NotFound() : Results.Forbid();
-
-    /// <summary>A string field of a (masked) shovel definition; URI fields may also be arrays, of which the first is used.</summary>
-    private static string? Field(JsonElement? definition, string name)
-    {
-        if (definition is not { ValueKind: JsonValueKind.Object } d || !d.TryGetProperty(name, out var value))
-            return null;
-        return value.ValueKind switch
-        {
-            JsonValueKind.String => value.GetString(),
-            JsonValueKind.Array when value.GetArrayLength() > 0 => value[0].GetString(),
-            _ => null,
-        };
-    }
 
     private static string? Endpoint(string? queue, string? exchange, string? routingKey) =>
         queue is not null ? $"queue: {queue}"

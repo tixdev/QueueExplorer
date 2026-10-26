@@ -315,6 +315,54 @@ export interface MsmqMessageView {
   extensionText?: string;
 }
 
+/** A queue or exchange in a migration flow; for MSMQ the vhost is the machine. */
+export interface FlowNode {
+  id: string;
+  broker: BrokerId;
+  cluster: string;
+  vhost: string;
+  kind: 'queue' | 'exchange';
+  name: string;
+  messages?: number;
+  consumers?: number;
+  /** False for a shovel end that does not exist or is on a broker the explorer does not know. */
+  known: boolean;
+  /** Column from the source (0) to the destination. */
+  stage: number;
+}
+
+export interface FlowHop {
+  kind: 'shovel' | 'binding' | 'bridge';
+  from: string;
+  to: string;
+  /** Shovel name, or the bridge (environment). */
+  name?: string;
+  state?: string;
+  detail?: string;
+  /** Bridge direction guessed from the name or unknown. */
+  inferred?: boolean;
+}
+
+export type FlowDirection = 'to-msmq' | 'to-rabbitmq' | 'both' | 'unknown' | 'rabbitmq';
+
+export interface Flow {
+  id: string;
+  title: string;
+  bridge?: string;
+  direction: FlowDirection;
+  nodes: FlowNode[];
+  hops: FlowHop[];
+  alerts: string[];
+}
+
+export interface FlowsResponse {
+  generatedAt: string;
+  bridges: string[];
+  flows: Flow[];
+  /** Connections not read yet: their flows are missing. */
+  pending: string[];
+}
+
 export interface MqProperty {
   name: string;
   value?: string;

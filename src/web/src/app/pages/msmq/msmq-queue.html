@@ -10,6 +10,7 @@
   </nav>
 
   @if (queue(); as q) {
+    <app-flow-links broker="msmq" [cluster]="store.cluster()!" [vhost]="machine()" [name]="q.name" />
     @if (q.type === 'outgoing') {
       <p class="muted">
         Outgoing queue: messages sent from {{ machine() }} to <span class="mono">{{ q.name }}</span> that have not been delivered yet.

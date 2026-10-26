@@ -9,6 +9,7 @@
   </nav>
 
   @if (queue(); as q) {
+    <app-flow-links broker="rabbitmq" [cluster]="store.cluster()!" [vhost]="vhost()" [name]="name()" />
     <section class="stats compact">
       <div class="stat"><span class="stat-label">Messages</span><span class="stat-value">{{ q.messages | num }}</span><span class="muted">{{ q.ready | num }} ready · {{ q.unacked | num }} unacked</span></div>
       <div class="stat"><span class="stat-label">Consumers</span><span class="stat-value">{{ q.consumers | num }}</span><span class="muted">{{ q.state }}</span></div>
